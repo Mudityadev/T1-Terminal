@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { fetchFeedback, type FeedbackRow } from '@/lib/supabase';
+import { fetchFeedback, fetchAnalytics, type FeedbackRow } from '@/lib/supabase';
 import {
   BarChart3, Users, Eye, MessageSquare, ExternalLink,
   RefreshCw, LogOut, Shield, LogIn, Download, Plus,
@@ -39,14 +39,21 @@ export default function AdminPage() {
 
   const loadData = useCallback(async () => {
     setLoading(true);
-    try {
-      const raw = localStorage.getItem('t1_admin_stats');
-      if (raw) { const s = JSON.parse(raw); setLocalStats({ visits: s.visits ?? 0, pageViews: s.pageViews ?? 0, lastVisit: s.lastVisit ?? '' }); }
-    } catch {}
-    const [fbRows, usersRes] = await Promise.allSettled([
+    
+    const [fbRows, usersRes, analyticsRes] = await Promise.allSettled([
       fetchFeedback(),
       fetch('/api/admin/users').then(r => r.ok ? r.json() : { users: [] }),
+      fetchAnalytics(),
     ]);
+
+    if (analyticsRes.status === 'fulfilled' && analyticsRes.value) {
+      setLocalStats({
+        visits: analyticsRes.value.unique_visits ?? 0,
+        pageViews: analyticsRes.value.page_views ?? 0,
+        lastVisit: analyticsRes.value.last_visit ?? '',
+      });
+    }
+
     if (fbRows.status === 'fulfilled') setFeedbacks(fbRows.value);
     if (usersRes.status === 'fulfilled') setUsers(usersRes.value?.users ?? []);
     setLoading(false);

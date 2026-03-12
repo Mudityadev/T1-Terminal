@@ -47,6 +47,14 @@ export async function fetchFeedback(): Promise<FeedbackRow[]> {
   return data ?? [];
 }
 
+// ===== ANALYTICS =====
+export async function fetchAnalytics() {
+  if (!supabaseConfigured) return { page_views: 0, unique_visits: 0, last_visit: '' };
+  const { data, error } = await supabase.from('t1_analytics').select('*').eq('id', 1).single();
+  if (error) { logError('Supabase analytics fetch error', error); return { page_views: 0, unique_visits: 0, last_visit: '' }; }
+  return data;
+}
+
 // ===== AUTH =====
 export async function signIn(email: string, password: string) {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
