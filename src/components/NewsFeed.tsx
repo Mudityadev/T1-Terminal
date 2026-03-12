@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { fireFlashAlert } from '@/components/FlashAlertBanner';
 import { useAuth } from '@/components/AuthProvider';
 import { saveNewsItem, unsaveNewsItem, fetchSavedHeadlines } from '@/lib/saved-news';
+import { useMarketStore } from '@/store/market-store';
 import {
   Zap, AlertTriangle, Radio, Bell, Volume2, VolumeX,
   ArrowUp, Signal, Activity, ExternalLink, Search,
@@ -96,6 +97,7 @@ export default function NewsFeed() {
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showSourceMenu, setShowSourceMenu] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [showAuthGate, setShowAuthGate] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
@@ -106,6 +108,7 @@ export default function NewsFeed() {
   const seenIds = useRef<Set<string>>(new Set()); // client-side dedup
 
   const { user } = useAuth();
+  const { watchlist } = useMarketStore();
 
   soundRef.current = soundEnabled;
   pausedRef.current = isPaused;
@@ -267,6 +270,137 @@ export default function NewsFeed() {
     urgency: 'By Urgency',
     source: 'By Source',
   };
+
+  // Map tickers to latest snapshot from market store for richer context
+  const tickerSnapshot = useMemo(() => {
+    const map = new Map<string, { price: number; changePercent: number }>();
+    for (const w of watchlist) {
+      map.set(w.symbol.toUpperCase(), { price: w.price, changePercent: w.changePercent });
+    }
+    return map;
+  }, [watchlist]);
+
+  // Precompute simple "related signals" counts based on ticker / region / category
+  const relatedKeyCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    const now = Date.now();
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    for (const i of items) {
+      if (now - i.timestamp > DAY_MS) continue;
+      const key =
+        (i.ticker ? `T:${i.ticker.toUpperCase()}` : '') ||
+        (i.region ? `R:${i.region.toLowerCase()}` : '') ||
+        `C:${i.category}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [items]);
+
+  // ===== Keyboard shortcuts for operator productivity =====
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      const typingInInput = tag === 'INPUT' || tag === 'TEXTAREA';
+
+      // Let the search input and other text fields behave normally
+      if (typingInInput && e.key !== 'Escape') return;
+
+      // ESC clears selection / menus when not typing
+      if (e.key === 'Escape') {
+        setSelectedId(null);
+        setShowSortMenu(false);
+        setShowSourceMenu(false);
+        return;
+      }
+
+      // No items – nothing to navigate
+      if (!displayedItems.length) return;
+
+      const keyLower = e.key.toLowerCase();
+
+      // Arrow key or Vim-style (j/k) navigation between items
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || keyLower === 'j' || keyLower === 'k') {
+        e.preventDefault();
+        const currentIndex = selectedId
+          ? displayedItems.findIndex((i) => i.id === selectedId)
+          : -1;
+        const goingDown = e.key === 'ArrowDown' || keyLower === 'j';
+        const nextIndex =
+          goingDown
+            ? Math.min(displayedItems.length - 1, currentIndex + 1)
+            : Math.max(0, currentIndex === -1 ? displayedItems.length - 1 : currentIndex - 1);
+        const nextItem = displayedItems[nextIndex];
+        if (nextItem) {
+          setSelectedId(nextItem.id);
+          const el = document.querySelector<HTMLElement>(
+            `[data-intel-id="${nextItem.id}"]`
+          );
+          el?.scrollIntoView({ block: 'nearest' });
+        }
+        return;
+      }
+
+      // Enter: open selected item link, if any
+      if (e.key === 'Enter' && selectedId) {
+        const item = displayedItems.find((i) => i.id === selectedId);
+        if (item?.link) {
+          window.open(item.link, '_blank', 'noopener,noreferrer');
+        }
+        return;
+      }
+
+      // F: quick toggle FLASH-only filter
+      if (keyLower === 'f') {
+        setActiveFilter((prev) => (prev === 'FLASH' ? 'ALL' : 'FLASH'));
+        return;
+      }
+
+      // 1–4: quick category presets (ALL, FLASH, UPSC, INDIA)
+      if (['1', '2', '3', '4'].includes(e.key)) {
+        if (e.key === '1') setActiveFilter('ALL');
+        if (e.key === '2') setActiveFilter('FLASH');
+        if (e.key === '3') setActiveFilter('UPSC');
+        if (e.key === '4') setActiveFilter('INDIA');
+        return;
+      }
+
+      // S: save / unsave selected headline
+      if (keyLower === 's' && selectedId) {
+        const item = displayedItems.find((i) => i.id === selectedId);
+        if (!item) return;
+        if (!user) {
+          setShowAuthGate(true);
+          return;
+        }
+        const isSaved = savedIds.has(item.headline);
+        const newSaved = new Set(savedIds);
+        (async () => {
+          if (isSaved) {
+            newSaved.delete(item.headline);
+            setSavedIds(newSaved);
+            await unsaveNewsItem(user.id, item.headline);
+          } else {
+            newSaved.add(item.headline);
+            setSavedIds(newSaved);
+            await saveNewsItem({
+              user_id: user.id,
+              headline: item.headline.slice(0, 500),
+              source: item.source,
+              category: item.category,
+              urgency: item.urgency,
+              link: item.link ?? null,
+              region: item.region ?? null,
+              ticker: item.ticker ?? null,
+            });
+          }
+        })();
+      }
+    };
+
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [displayedItems, selectedId, savedIds, user, setSavedIds, setActiveFilter]);
 
   return (
     <div className="flex flex-col h-full min-h-0" onClick={() => { setShowSortMenu(false); setShowSourceMenu(false); }}>
@@ -446,31 +580,41 @@ export default function NewsFeed() {
       )}
 
       {/* ===== FEED ===== */}
-      <div ref={feedRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-1.5 sm:p-2 space-y-1">
+      <div ref={feedRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-1.5 sm:p-2 space-y-1.5">
         {displayedItems.map((item, index) => {
           const style = URGENCY_STYLES[item.urgency];
           const Icon = URGENCY_ICON[item.urgency];
           const catCfg = CATEGORY_CONFIG[item.category];
           const srcCfg = SOURCE_CONFIG[item.source] || { icon: '○', color: '#6b7280' };
           const isNewest = index === 0 && !isPaused && !searchQuery;
+          const isSelected = selectedId === item.id;
           const isSaved = savedIds.has(item.headline);
           const hasLink = Boolean(item.link);
+          const tickerInfo = item.ticker ? tickerSnapshot.get(item.ticker.toUpperCase()) : undefined;
+          const relatedKey =
+            (item.ticker ? `T:${item.ticker.toUpperCase()}` : '') ||
+            (item.region ? `R:${item.region.toLowerCase()}` : '') ||
+            `C:${item.category}`;
+          const relatedCount = relatedKeyCounts.get(relatedKey) ?? 0;
 
           return (
             <div
               key={item.id}
+              data-intel-id={item.id}
               onMouseEnter={() => setHoveredId(item.id)}
               onMouseLeave={() => setHoveredId(null)}
               className={cn(
-                'group relative flex flex-col gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 sm:py-2.5 rounded-lg border transition-all duration-200',
-                style.border, style.bg,
+                'group relative flex flex-col gap-1.5 px-2 sm:px-3 py-2.5 sm:py-3 rounded-lg border transition-all duration-150',
+                style.border,
+                style.bg,
                 isNewest && 'animate-slide-in-right',
                 item.urgency === 'FLASH' && 'hft-news-flash',
                 hoveredId === item.id && 'brightness-125',
+                isSelected && 'ring-1 ring-[var(--t1-accent-green)] ring-offset-0 border-[var(--t1-border-glow)]'
               )}
             >
               {/* === TAG ROW === */}
-              <div className="flex items-center flex-wrap gap-1">
+              <div className="flex items-center flex-wrap gap-1.5">
                 {/* Urgency badge */}
                 {item.urgency !== 'NORMAL' && (
                   <span className={cn(
@@ -490,16 +634,25 @@ export default function NewsFeed() {
                 >
                   {catCfg?.label || item.category}
                 </span>
-                {/* Ticker */}
+                {/* Ticker with mini snapshot, if available */}
                 {item.ticker && (
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm text-[8px] sm:text-[9px] font-bold font-mono border border-[var(--t1-accent-cyan)]/30 bg-[var(--t1-accent-cyan)]/10 text-[var(--t1-accent-cyan)]">
-                    ${item.ticker}
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[8px] sm:text-[9px] font-mono border border-[var(--t1-accent-cyan)]/30 bg-[var(--t1-accent-cyan)]/10 text-[var(--t1-accent-cyan)]">
+                    <span className="font-bold">${item.ticker}</span>
+                    {tickerInfo && (
+                      <span className="text-[var(--t1-text-primary)]">
+                        {tickerInfo.price.toFixed(2)}
+                        {' '}
+                        <span className={tickerInfo.changePercent >= 0 ? 'text-[var(--t1-accent-green)]' : 'text-[var(--t1-accent-red)]'}>
+                          {tickerInfo.changePercent >= 0 ? '+' : ''}{tickerInfo.changePercent.toFixed(2)}%
+                        </span>
+                      </span>
+                    )}
                   </span>
                 )}
                 {/* Region */}
                 {item.region && (
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-sm text-[8px] sm:text-[9px] font-mono border border-[var(--t1-border)] text-[var(--t1-text-muted)]">
-                    {item.region}
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[8px] sm:text-[9px] font-mono border border-[var(--t1-border)] text-[var(--t1-text-muted)]" title={item.region}>
+                    <span>{item.region}</span>
                   </span>
                 )}
                 {/* Time */}
@@ -512,7 +665,7 @@ export default function NewsFeed() {
               {hasLink ? (
                 <a href={item.link!} target="_blank" rel="noopener noreferrer"
                   className={cn(
-                    'text-[10px] sm:text-[11px] leading-snug tracking-tight hover:underline cursor-pointer',
+                    'text-[11px] sm:text-[12px] leading-snug tracking-tight hover:underline cursor-pointer',
                     item.urgency === 'FLASH'    && 'text-white font-bold',
                     item.urgency === 'URGENT'   && 'text-[var(--t1-text-primary)] font-semibold',
                     item.urgency === 'BULLETIN' && 'text-[var(--t1-text-primary)] font-medium',
@@ -522,7 +675,7 @@ export default function NewsFeed() {
                 </a>
               ) : (
                 <p className={cn(
-                  'text-[10px] sm:text-[11px] leading-snug tracking-tight',
+                  'text-[11px] sm:text-[12px] leading-snug tracking-tight',
                   item.urgency === 'FLASH'    && 'text-white font-bold',
                   item.urgency === 'URGENT'   && 'text-[var(--t1-text-primary)] font-semibold',
                   item.urgency === 'BULLETIN' && 'text-[var(--t1-text-primary)] font-medium',
@@ -533,10 +686,15 @@ export default function NewsFeed() {
               )}
 
               {/* === SOURCE ROW + ACTIONS === */}
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 mt-0.5 sm:mt-1">
                 <span className="text-[8px] sm:text-[9px] font-mono font-bold" style={{ color: srcCfg.color }}>
                   {srcCfg.icon} {item.source}
                 </span>
+                {relatedCount > 1 && (
+                  <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-sm text-[8px] font-mono bg-[var(--t1-bg-tertiary)] text-[var(--t1-text-muted)] border border-[var(--t1-border)]">
+                    {relatedCount} in last 24h
+                  </span>
+                )}
                 {/* Open article link */}
                 {hasLink && (
                   <a href={item.link!} target="_blank" rel="noopener noreferrer"

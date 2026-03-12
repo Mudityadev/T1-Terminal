@@ -36,6 +36,10 @@ const RSS_FEEDS = [
   { url: 'https://www.cnbc.com/id/10001147/device/rss/rss.html', source: 'CNBC', defaultCategory: 'ECONOMICS' },
   { url: 'https://feeds.a]reuters.com/reuters/topNews', source: 'REUTERS', defaultCategory: 'GEOPOLITICS' },
   { url: 'https://feeds.a]reuters.com/reuters/businessNews', source: 'REUTERS', defaultCategory: 'MARKETS' },
+  // High-signal official macro/central-bank sources
+  { url: 'https://www.federalreserve.gov/feeds/press_all.xml', source: 'FED', defaultCategory: 'ECONOMICS' },
+  { url: 'https://www.ecb.europa.eu/press/pr/rss/en.rss', source: 'ECB', defaultCategory: 'ECONOMICS' },
+  { url: 'https://www.bankofengland.co.uk/boeapps/iadb/RSS/NewsReleasesAll.xml', source: 'BOE', defaultCategory: 'ECONOMICS' },
 ];
 
 // ===== KEYWORD-BASED CATEGORIZATION =====
