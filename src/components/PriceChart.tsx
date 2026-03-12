@@ -84,6 +84,7 @@ export default function PriceChart() {
     );
     volumeSeriesRef.current = volumeSeries;
 
+
     // Main series
     if (activeChartType === 'Candlestick') {
       const series = chart.addCandlestickSeries({
