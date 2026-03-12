@@ -28,7 +28,8 @@
 
 html, body {
   height: 100%;
-  overflow: hidden;
+  min-height: 100%;
+  overflow-x: hidden;
   background: var(--t1-bg-primary);
   color: var(--t1-text-primary);
 }
