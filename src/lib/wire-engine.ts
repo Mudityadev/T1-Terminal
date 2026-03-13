@@ -99,27 +99,32 @@ let totalItems = 0;
 let apiStatus: 'connected' | 'fallback' = 'fallback';
 let lastFetchLatency = 0;
 
-// Audio
+// Audio — only created after a user gesture to satisfy browser autoplay policy
 let audioCtx: AudioContext | null = null;
-
-function getAudioContext(): AudioContext {
-  if (!audioCtx) audioCtx = new AudioContext();
-  return audioCtx;
-}
 
 export function playFlashAlert() {
   try {
-    const ctx = getAudioContext();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.frequency.value = 880;
-    osc.type = 'square';
-    gain.gain.value = 0.05;
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.15);
+    // Lazy-create AudioContext inside the user-gesture-initiated callback chain
+    if (!audioCtx) audioCtx = new AudioContext();
+    const ctx = audioCtx;
+    // Resume in case the context was suspended (required by browsers)
+    const play = () => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 880;
+      osc.type = 'square';
+      gain.gain.value = 0.05;
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.15);
+    };
+    if (ctx.state === 'suspended') {
+      ctx.resume().then(play).catch(() => {});
+    } else {
+      play();
+    }
   } catch { /* Audio may not be available */ }
 }
 
