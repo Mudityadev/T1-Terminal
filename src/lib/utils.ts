@@ -1,68 +1,38 @@
-/**
- * T1 Terminal — Utility Functions
- */
+import { clsx, type ClassValue } from "clsx"
+import { twMerge } from "tailwind-merge"
 
-export function formatCurrency(value: number, decimals = 2): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(value);
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
 }
 
-export function formatNumber(value: number, decimals = 2): string {
-  return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(value);
-}
-
-export function formatPercent(value: number): string {
-  const sign = value >= 0 ? '+' : '';
-  return `${sign}${value.toFixed(2)}%`;
-}
-
-export function formatLargeNumber(value: number): string {
-  if (value >= 1_000_000_000_000) return `${(value / 1_000_000_000_000).toFixed(2)}T`;
-  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(2)}K`;
-  return value.toFixed(2);
-}
-
-export function formatTimestamp(date: Date): string {
-  return date.toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
-}
-
-export function formatDate(date: Date): string {
-  return date.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
-export function cn(...classes: (string | boolean | undefined | null)[]): string {
-  return classes.filter(Boolean).join(' ');
-}
-
+/** Returns a random float between min (inclusive) and max (exclusive) */
 export function randomBetween(min: number, max: number): number {
   return Math.random() * (max - min) + min;
 }
 
-export function generateSparklineData(points = 20): number[] {
-  const data: number[] = [];
-  let value = 50 + Math.random() * 50;
-  for (let i = 0; i < points; i++) {
-    value += (Math.random() - 0.48) * 3;
-    value = Math.max(10, Math.min(100, value));
-    data.push(value);
+/** Generates a sparkline array of `n` price-like data points */
+export function generateSparklineData(n = 20, base = 100): number[] {
+  const data: number[] = [base];
+  for (let i = 1; i < n; i++) {
+    const prev = data[i - 1];
+    data.push(Math.max(0, prev + randomBetween(-2, 2)));
   }
   return data;
 }
+
+/** Format a number as a currency string (USD by default) */
+export function formatCurrency(value: number, currency = 'USD', decimals = 2): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(value);
+}
+
+/** Format a number as a percentage string */
+export function formatPercent(value: number, decimals = 2): string {
+  const sign = value >= 0 ? '+' : '';
+  return `${sign}${value.toFixed(decimals)}%`;
+}
+

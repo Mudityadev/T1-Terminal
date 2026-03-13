@@ -9,7 +9,7 @@
  * - Live throughput metrics (items/min, latency)
  */
 
-export type IntelCategory = 'MARKETS' | 'POLITICS' | 'ECONOMICS' | 'GEOPOLITICS' | 'TECH' | 'ENERGY' | 'DEFENSE' | 'CYBER';
+export type IntelCategory = 'MARKETS' | 'POLITICS' | 'ECONOMICS' | 'GEOPOLITICS' | 'TECH' | 'ENERGY' | 'DEFENSE' | 'CYBER' | 'GOVERNANCE' | 'IR' | 'AGRICULTURE' | 'ENVIRONMENT' | 'DISASTER' | 'INTERNAL_SECURITY' | 'SCIENCE';
 export type IntelUrgency = 'FLASH' | 'URGENT' | 'BULLETIN' | 'NORMAL';
 export type IntelSource = 'T1 WIRE' | 'SIGINT' | 'GOVINT' | 'FININT' | 'OSINT';
 
@@ -23,7 +23,28 @@ export interface IntelItem {
   region?: string;
   ticker?: string;
   link?: string;
+  imageUrl?: string;
+  engagementScore?: number;
+  storyline?: string;
   isReal?: boolean; // true = from API, false = mock fallback
+}
+
+// Category-based thumbnail seeds for deterministic images
+const CATEGORY_IMAGE_SEEDS: Partial<Record<IntelCategory, number[]>> = {
+  MARKETS:     [1060, 534, 443, 669, 730],
+  POLITICS:    [901, 457, 48, 1068, 906],
+  ECONOMICS:   [534, 669, 1060, 730, 443],
+  GEOPOLITICS: [60, 1011, 306, 76, 826],
+  TECH:        [1, 180, 366, 574, 823],
+  ENERGY:      [414, 803, 1031, 433, 992],
+  DEFENSE:     [76, 826, 306, 60, 1011],
+  CYBER:       [823, 574, 1, 366, 180],
+};
+let imageCounter = 0;
+function getCategoryImage(category: IntelCategory): string {
+  const seeds = CATEGORY_IMAGE_SEEDS[category] || [1060, 534, 443];
+  const seed = seeds[imageCounter++ % seeds.length];
+  return `https://picsum.photos/seed/${seed}/160/120`;
 }
 
 // ===== MOCK FALLBACK HEADLINES (used when API is down) =====
@@ -103,7 +124,7 @@ async function fetchRealData() {
     if (!res.ok) throw new Error('API error');
 
     const data = await res.json();
-    const items: Array<{ headline: string; source: string; category: string; urgency: string; timestamp: number; link?: string; region?: string }> = data.items || [];
+    const items: Array<{ headline: string; source: string; category: string; urgency: string; timestamp: number; link?: string; region?: string; ticker?: string; engagementScore?: number; storyline?: string }> = data.items || [];
 
     if (items.length === 0) throw new Error('Empty response');
 
@@ -126,13 +147,21 @@ async function fetchRealData() {
         timestamp: item.timestamp || Date.now(),
         link: item.link,
         region: item.region,
+        ticker: item.ticker,
+        engagementScore: item.engagementScore,
+        storyline: item.storyline,
         isReal: true,
       });
     }
 
-    // Sort queue: FLASH first, then URGENT, then by timestamp
+    // Sort queue by engagement score (highest first), then urgency, then recency
     const urgencyOrder: Record<string, number> = { FLASH: 0, URGENT: 1, BULLETIN: 2, NORMAL: 3 };
     deliveryQueue.sort((a, b) => {
+      // Engagement score first (highest wins)
+      const aScore = a.engagementScore ?? 0;
+      const bScore = b.engagementScore ?? 0;
+      if (aScore !== bScore) return bScore - aScore;
+      // Then urgency
       const aOrder = urgencyOrder[a.urgency] ?? 3;
       const bOrder = urgencyOrder[b.urgency] ?? 3;
       if (aOrder !== bOrder) return aOrder - bOrder;
@@ -174,6 +203,7 @@ function deliverNext() {
     ...item,
     id: `intel-${Date.now()}-${itemCounter}`,
     timestamp: Date.now(),
+    imageUrl: item.imageUrl || getCategoryImage(item.category as IntelCategory),
   };
 
   // Mark headline as delivered so it's never shown again this session
@@ -238,6 +268,7 @@ export function startWireEngine(onItem: OnNewItem, onMetrics: OnMetrics) {
             ...item,
             id: `intel-${Date.now()}-${itemCounter}`,
             timestamp: Date.now(),
+            imageUrl: item.imageUrl || getCategoryImage(item.category as IntelCategory),
           };
           // Track delivered
           deliveredHeadlines.add(headlineKey(item.headline));

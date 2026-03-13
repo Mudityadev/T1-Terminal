@@ -20,22 +20,29 @@ import {
 type FilterCategory = 'ALL' | IntelCategory | 'FLASH' | 'UPSC' | 'INDIA';
 
 const CATEGORY_CONFIG: Record<string, { color: string; label: string }> = {
-  MARKETS:    { color: '#22c55e', label: '📈 MARKETS' },
-  POLITICS:   { color: '#3b82f6', label: '🏛 POLITICS' },
-  ECONOMICS:  { color: '#f59e0b', label: '💰 ECONOMICS' },
-  GEOPOLITICS:{ color: '#ef4444', label: '🌍 GEOPOLITICS' },
-  TECH:       { color: '#06b6d4', label: '⚡ TECH' },
-  ENERGY:     { color: '#fb923c', label: '🛢 ENERGY' },
-  DEFENSE:    { color: '#a855f7', label: '🛡 DEFENSE' },
-  CYBER:      { color: '#ec4899', label: '🔐 CYBER' },
-  UPSC:       { color: '#eab308', label: '🎓 UPSC' },
-  INDIA:      { color: '#f97316', label: '🇮🇳 INDIA' },
+  GOVERNANCE:       { color: '#8b5cf6', label: '🏛 GOVERNANCE' },
+  POLITICS:         { color: '#3b82f6', label: '🗳 POLITICS' },
+  IR:               { color: '#06b6d4', label: '🌐 IR' },
+  ECONOMICS:        { color: '#f59e0b', label: '💰 ECONOMICS' },
+  AGRICULTURE:      { color: '#84cc16', label: '🌾 AGRICULTURE' },
+  ENVIRONMENT:      { color: '#10b981', label: '🌍 ENVIRONMENT' },
+  DISASTER:         { color: '#ef4444', label: '🚨 DISASTER' },
+  INTERNAL_SECURITY:{ color: '#dc2626', label: '🛡 INT. SECURITY' },
+  SCIENCE:          { color: '#a855f7', label: '🔬 SCIENCE' },
+  MARKETS:          { color: '#22c55e', label: '📈 MARKETS' },
+  GEOPOLITICS:      { color: '#ef4444', label: '⚔ GEOPOLITICS' },
+  TECH:             { color: '#06b6d4', label: '⚡ TECH' },
+  ENERGY:           { color: '#fb923c', label: '🛢 ENERGY' },
+  DEFENSE:          { color: '#a855f7', label: '🎯 DEFENSE' },
+  CYBER:            { color: '#ec4899', label: '🔐 CYBER' },
+  UPSC:             { color: '#eab308', label: '🎓 UPSC' },
+  INDIA:            { color: '#f97316', label: '🇮🇳 INDIA' },
 };
 
-const FILTER_TABS: FilterCategory[] = ['ALL', 'FLASH', 'UPSC', 'INDIA', 'MARKETS', 'ECONOMICS', 'GEOPOLITICS', 'POLITICS', 'TECH', 'ENERGY', 'DEFENSE', 'CYBER'];
+const FILTER_TABS: FilterCategory[] = ['ALL', 'FLASH', 'INDIA', 'GOVERNANCE', 'POLITICS', 'IR', 'ECONOMICS', 'ENVIRONMENT', 'DISASTER', 'SCIENCE', 'MARKETS', 'TECH', 'GEOPOLITICS', 'DEFENSE'];
 
 // UPSC covers: Indian polity, governance, IR, economy, environment, S&T, defense, social issues
-const UPSC_CATEGORIES: IntelCategory[] = ['POLITICS', 'ECONOMICS', 'GEOPOLITICS', 'DEFENSE', 'TECH', 'ENERGY'];
+const UPSC_CATEGORIES: IntelCategory[] = ['POLITICS', 'ECONOMICS', 'GEOPOLITICS', 'DEFENSE', 'TECH', 'ENERGY', 'GOVERNANCE', 'IR', 'AGRICULTURE', 'ENVIRONMENT', 'DISASTER', 'INTERNAL_SECURITY', 'SCIENCE'];
 const UPSC_KEYWORDS = [
   'india', 'indian', 'parliament', 'constitution', 'supreme court', 'policy', 'governance',
   'rbi', 'sebi', 'niti', 'modi', 'budget', 'inflation', 'gdp', 'imf', 'world bank',
@@ -83,6 +90,7 @@ type SortMode = 'newest' | 'oldest' | 'urgency' | 'source';
 
 const URGENCY_ORDER: Record<IntelUrgency, number> = { FLASH: 0, URGENT: 1, BULLETIN: 2, NORMAL: 3 };
 const MAX_ITEMS = 200;
+const CACHE_KEY = 't1_live_intel_cache_v1';
 
 export default function NewsFeed() {
   const [items, setItems] = useState<IntelItem[]>([]);
@@ -100,6 +108,11 @@ export default function NewsFeed() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [showAuthGate, setShowAuthGate] = useState(false);
+  const [followedStories, setFollowedStories] = useState<Set<string>>(new Set());
+  const [mutedSources, setMutedSources] = useState<Set<string>>(new Set());
+  const [mutedStories, setMutedStories] = useState<Set<string>>(new Set());
+  const [briefForId, setBriefForId] = useState<string | null>(null);
+  const [briefMode, setBriefMode] = useState<'10s' | '30s' | '2m' | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const soundRef = useRef(false);
@@ -113,10 +126,113 @@ export default function NewsFeed() {
   soundRef.current = soundEnabled;
   pausedRef.current = isPaused;
 
+  // ===== Helpers for storyline & explanations =====
+  function storylineKey(item: IntelItem): string {
+    if (item.ticker) return `T:${item.ticker.toUpperCase()}`;
+    if (item.region) return `R:${item.region.toLowerCase()}`;
+    return `C:${item.category}`;
+  }
+
+  function whyThisMatters(item: IntelItem): { text: string; keywords: string; indicator: string } {
+    const h = item.headline.toLowerCase();
+    
+    // Quick keyword extraction heuristic
+    const extractKeys = (text: string) => {
+      const words = text.split(/[\s,.-]+/);
+      return words.filter(w => w.length > 5).slice(0, 2).map(w => w.toUpperCase()).join(' | ');
+    };
+    const keys = (item.headline || '').split(/[\s,.-]+/).filter(w => w.length > 5).slice(0, 2).map(w => w.toUpperCase()).join(' | ') || 'IMPACT | SIGNAL';
+
+    if (item.category === 'MARKETS' || /stock|index|yield|bond|rally|crash/.test(h)) {
+      return { 
+        text: 'Shifts sentiment and risk across global markets and portfolios.',
+        keywords: keys,
+        indicator: 'VOLATILITY ⇡ | SENTIMENT SHIFT'
+      };
+    }
+    if (item.category === 'GEOPOLITICS') {
+      return {
+        text: 'Alters geopolitical risk, trade flows, and regional stability.',
+        keywords: keys,
+        indicator: 'RISK FACTOR ☢ | MACRO IMPACT'
+      };
+    }
+    if (item.category === 'ECONOMICS' || /inflation|gdp|recession|central bank/.test(h)) {
+      return {
+        text: 'Impacts growth expectations, central bank paths, and asset pricing.',
+        keywords: keys,
+        indicator: 'YIELD CURVE ∞ | SYSTEMIC SHOCK'
+      };
+    }
+    if (item.category === 'TECH') {
+      return {
+        text: 'Repositions power in AI, chips, and critical infrastructure providers.',
+        keywords: keys,
+        indicator: 'DISRUPTION ⚡ | CAPEX SURGE'
+      };
+    }
+    if (item.category === 'ENERGY') {
+      return {
+        text: 'Moves energy security, input costs, and inflation expectations.',
+        keywords: keys,
+        indicator: 'SUPPLY SHOCK 🛢 | COST PRESSURES'
+      };
+    }
+    if (item.category === 'DEFENSE') {
+      return {
+        text: 'Signals shifts in hard power, deterrence, and conflict readiness.',
+        keywords: keys,
+        indicator: 'DEFCON ⚑ | DETERRENCE SHIFT'
+      };
+    }
+    if (item.category === 'CYBER') {
+      return {
+        text: 'Changes operational risk surface across networks and critical systems.',
+        keywords: keys,
+        indicator: 'ZERO-DAY ☠ | ATTACK VECTOR'
+      };
+    }
+    return {
+      text: 'Changes the risk and opportunity landscape for operators watching this feed.',
+      keywords: keys,
+      indicator: 'ANOMALY DETECTED Ꙭ | MONITOR'
+    };
+  }
+
+  function watchNextHint(item: IntelItem): string {
+    if (item.category === 'GEOPOLITICS') {
+      return 'Official statements, ceasefire moves, and market-open reaction.';
+    }
+    if (item.category === 'MARKETS') {
+      return 'Futures, cash open, and cross-asset spillover into FX and credit.';
+    }
+    if (item.category === 'ECONOMICS') {
+      return 'Central bank commentary, curve moves, and equity sector shifts.';
+    }
+    if (item.category === 'TECH') {
+      return 'Earnings calls, regulator moves, and peer reactions in the sector.';
+    }
+    return 'Subsequent confirmations, policy moves, and how markets reprice this.';
+  }
+
+  function impactScore(item: IntelItem): number {
+    // Use server-computed engagement score if available
+    if (item.engagementScore) return item.engagementScore;
+    // Fallback heuristic for mock items
+    let base =
+      item.urgency === 'FLASH' ? 80 :
+      item.urgency === 'URGENT' ? 65 :
+      item.urgency === 'BULLETIN' ? 50 :
+      35;
+    if (item.category === 'GEOPOLITICS' || item.category === 'ECONOMICS') base += 10;
+    else if (item.category === 'MARKETS' || item.category === 'DEFENSE') base += 5;
+    return Math.max(10, Math.min(99, Math.round(base)));
+  }
+
   const handleNewItem = useCallback((item: IntelItem) => {
     // Client-side dedup — skip if we've already rendered this id or headline
-    const hkey = item.headline.toLowerCase().slice(0, 60);
-    if (seenIds.current.has(item.id) || seenIds.current.has(hkey)) return;
+    const hkey = (item.headline || '').toLowerCase().slice(0, 60);
+    if (!item.id || seenIds.current.has(item.id) || seenIds.current.has(hkey)) return;
     seenIds.current.add(item.id);
     seenIds.current.add(hkey);
 
@@ -134,6 +250,21 @@ export default function NewsFeed() {
 
   const handleMetrics = useCallback((ipm: number, total: number, latencyMs: number, status: string) => {
     setMetrics({ ipm, total, latencyMs, status });
+  }, []);
+
+  // Hydrate from local cache so first paint is never empty
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      const raw = window.localStorage.getItem(CACHE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as IntelItem[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        setItems(parsed.slice(0, MAX_ITEMS));
+      }
+    } catch {
+      // ignore cache errors
+    }
   }, []);
 
   useEffect(() => {
@@ -217,11 +348,11 @@ export default function NewsFeed() {
     } else if (activeFilter === 'UPSC') {
       result = result.filter(i =>
         UPSC_CATEGORIES.includes(i.category as IntelCategory) ||
-        UPSC_KEYWORDS.some(kw => i.headline.toLowerCase().includes(kw))
+        UPSC_KEYWORDS.some(kw => (i.headline || '').toLowerCase().includes(kw))
       );
     } else if (activeFilter === 'INDIA') {
       result = result.filter(i =>
-        INDIA_KEYWORDS.some(kw => i.headline.toLowerCase().includes(kw))
+        INDIA_KEYWORDS.some(kw => (i.headline || '').toLowerCase().includes(kw))
       );
     } else if (activeFilter !== 'ALL') {
       result = result.filter(i => i.category === activeFilter);
@@ -232,13 +363,22 @@ export default function NewsFeed() {
       result = result.filter(i => activeSources.has(i.source as SourceType));
     }
 
+    // Mute filters (sources and storylines)
+    if (mutedSources.size > 0 || mutedStories.size > 0) {
+      result = result.filter((i) => {
+        if (mutedSources.has(i.source)) return false;
+        if (mutedStories.size > 0 && mutedStories.has(storylineKey(i))) return false;
+        return true;
+      });
+    }
+
     // Search
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(i =>
-        i.headline.toLowerCase().includes(q) ||
-        i.category.toLowerCase().includes(q) ||
-        i.source.toLowerCase().includes(q) ||
+        (i.headline || '').toLowerCase().includes(q) ||
+        (i.category || '').toLowerCase().includes(q) ||
+        (i.source || '').toLowerCase().includes(q) ||
         (i.ticker?.toLowerCase().includes(q)) ||
         (i.region?.toLowerCase().includes(q))
       );
@@ -246,21 +386,21 @@ export default function NewsFeed() {
 
     // Sort
     const arr = [...result];
-    if (sortMode === 'newest') arr.sort((a, b) => b.timestamp - a.timestamp);
-    else if (sortMode === 'oldest') arr.sort((a, b) => a.timestamp - b.timestamp);
-    else if (sortMode === 'urgency') arr.sort((a, b) => URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency]);
-    else if (sortMode === 'source') arr.sort((a, b) => a.source.localeCompare(b.source));
+    if (sortMode === 'newest') arr.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    else if (sortMode === 'oldest') arr.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    else if (sortMode === 'urgency') arr.sort((a, b) => (URGENCY_ORDER[a.urgency] ?? 3) - (URGENCY_ORDER[b.urgency] ?? 3));
+    else if (sortMode === 'source') arr.sort((a, b) => (a.source || '').localeCompare(b.source || ''));
     return arr;
-  }, [items, activeFilter, activeSources, searchQuery, sortMode]);
+  }, [items, activeFilter, activeSources, mutedSources, mutedStories, searchQuery, sortMode]);
 
   const flashCount   = useMemo(() => items.filter(i => i.urgency === 'FLASH').length, [items]);
   const urgentCount  = useMemo(() => items.filter(i => i.urgency === 'URGENT').length, [items]);
   const upscCount    = useMemo(() => items.filter(i =>
     UPSC_CATEGORIES.includes(i.category as IntelCategory) ||
-    UPSC_KEYWORDS.some(kw => i.headline.toLowerCase().includes(kw))
+    UPSC_KEYWORDS.some(kw => (i.headline || '').toLowerCase().includes(kw))
   ).length, [items]);
   const indiaCount   = useMemo(() => items.filter(i =>
-    INDIA_KEYWORDS.some(kw => i.headline.toLowerCase().includes(kw))
+    INDIA_KEYWORDS.some(kw => (i.headline || '').toLowerCase().includes(kw))
   ).length, [items]);
   const isFiltered   = searchQuery || activeFilter !== 'ALL' || activeSources.size < ALL_SOURCES.length;
 
@@ -294,6 +434,18 @@ export default function NewsFeed() {
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
     return counts;
+  }, [items]);
+
+  // Persist cache so landing is never empty
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      if (items.length === 0) return;
+      const toStore = items.slice(0, 80);
+      window.localStorage.setItem(CACHE_KEY, JSON.stringify(toStore));
+    } catch {
+      // ignore
+    }
   }, [items]);
 
   // ===== Keyboard shortcuts for operator productivity =====
@@ -580,10 +732,10 @@ export default function NewsFeed() {
       )}
 
       {/* ===== FEED ===== */}
-      <div ref={feedRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-1.5 sm:p-2 space-y-1.5">
+      <div ref={feedRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-2 sm:p-3 md:p-4 space-y-3">
         {displayedItems.map((item, index) => {
-          const style = URGENCY_STYLES[item.urgency];
-          const Icon = URGENCY_ICON[item.urgency];
+          const style = URGENCY_STYLES[item.urgency] || URGENCY_STYLES['NORMAL'];
+          const Icon = URGENCY_ICON[item.urgency] || URGENCY_ICON['NORMAL'];
           const catCfg = CATEGORY_CONFIG[item.category];
           const srcCfg = SOURCE_CONFIG[item.source] || { icon: '○', color: '#6b7280' };
           const isNewest = index === 0 && !isPaused && !searchQuery;
@@ -604,142 +756,170 @@ export default function NewsFeed() {
               onMouseEnter={() => setHoveredId(item.id)}
               onMouseLeave={() => setHoveredId(null)}
               className={cn(
-                'group relative flex flex-col gap-1.5 px-2 sm:px-3 py-2.5 sm:py-3 rounded-lg border transition-all duration-150',
+                'group relative rounded-lg border transition-all duration-200 overflow-hidden',
+                'bg-[var(--t1-bg-secondary)] hover:bg-[var(--t1-bg-tertiary)]/50',
                 style.border,
-                style.bg,
-                isNewest && 'animate-slide-in-right',
-                item.urgency === 'FLASH' && 'hft-news-flash',
-                hoveredId === item.id && 'brightness-125',
-                isSelected && 'ring-1 ring-[var(--t1-accent-green)] ring-offset-0 border-[var(--t1-border-glow)]'
+                hoveredId === item.id && 'border-[var(--t1-border-glow)] shadow-[var(--t1-glow-green)]',
+                isSelected && 'ring-1 ring-[var(--t1-accent-green)] border-[var(--t1-border-glow)]'
               )}
             >
-              {/* === TAG ROW === */}
-              <div className="flex items-center flex-wrap gap-1.5">
-                {/* Urgency badge */}
-                {item.urgency !== 'NORMAL' && (
-                  <span className={cn(
-                    'inline-flex items-center gap-0.5 px-1 sm:px-1.5 py-0.5 rounded-sm text-[8px] sm:text-[9px] font-black tracking-widest',
-                    item.urgency === 'FLASH'    && 'bg-red-500/20 text-red-400 border border-red-500/40 animate-pulse-glow',
-                    item.urgency === 'URGENT'   && 'bg-amber-500/15 text-amber-400 border border-amber-500/30',
-                    item.urgency === 'BULLETIN' && 'bg-blue-500/15 text-blue-400 border border-blue-500/30',
-                  )}>
-                    <Icon size={8} />
-                    {item.urgency}
-                  </span>
-                )}
-                {/* Category tag */}
-                <span
-                  className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded-sm text-[8px] sm:text-[9px] font-bold tracking-wider border"
-                  style={{ color: catCfg?.color || '#6b7280', backgroundColor: (catCfg?.color || '#6b7280') + '18', borderColor: (catCfg?.color || '#6b7280') + '35' }}
-                >
-                  {catCfg?.label || item.category}
-                </span>
-                {/* Ticker with mini snapshot, if available */}
-                {item.ticker && (
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[8px] sm:text-[9px] font-mono border border-[var(--t1-accent-cyan)]/30 bg-[var(--t1-accent-cyan)]/10 text-[var(--t1-accent-cyan)]">
-                    <span className="font-bold">${item.ticker}</span>
-                    {tickerInfo && (
-                      <span className="text-[var(--t1-text-primary)]">
-                        {tickerInfo.price.toFixed(2)}
-                        {' '}
-                        <span className={tickerInfo.changePercent >= 0 ? 'text-[var(--t1-accent-green)]' : 'text-[var(--t1-accent-red)]'}>
-                          {tickerInfo.changePercent >= 0 ? '+' : ''}{tickerInfo.changePercent.toFixed(2)}%
-                        </span>
+              {/* === MAIN CONTENT === */}
+              <div>
+
+                {/* Text content */}
+                <div className="flex-1 min-w-0 p-3 sm:p-4 space-y-2">
+                  {/* Tag row */}
+                  <div className="flex items-center flex-wrap gap-1.5">
+                    {item.urgency !== 'NORMAL' && (
+                      <span className={cn(
+                        'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black tracking-widest uppercase',
+                        item.urgency === 'FLASH'    && 'bg-red-500/20 text-red-400 border border-red-500/40 animate-pulse-glow',
+                        item.urgency === 'URGENT'   && 'bg-amber-500/15 text-amber-400 border border-amber-500/30',
+                        item.urgency === 'BULLETIN' && 'bg-blue-500/15 text-blue-400 border border-blue-500/30',
+                      )}>
+                        <Icon size={8} />
+                        {item.urgency}
                       </span>
                     )}
-                  </span>
-                )}
-                {/* Region */}
-                {item.region && (
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[8px] sm:text-[9px] font-mono border border-[var(--t1-border)] text-[var(--t1-text-muted)]" title={item.region}>
-                    <span>{item.region}</span>
-                  </span>
-                )}
-                {/* Time */}
-                <span className="ml-auto text-[9px] sm:text-[10px] text-[var(--t1-text-muted)] font-mono tabular-nums">
-                  {fastRelativeTime(item.timestamp)}
-                </span>
-              </div>
+                    <span
+                      className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider border"
+                      style={{ color: catCfg?.color || '#78716c', backgroundColor: (catCfg?.color || '#78716c') + '15', borderColor: (catCfg?.color || '#78716c') + '30' }}
+                    >
+                      {item.category}
+                    </span>
+                    {item.region && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono border border-[var(--t1-border)] text-[var(--t1-text-muted)]">
+                        {item.region}
+                      </span>
+                    )}
+                    <span className="ml-auto text-[10px] text-[var(--t1-text-muted)] font-mono tabular-nums shrink-0">
+                      {fastRelativeTime(item.timestamp)}{' · '}
+                      <span className="hidden sm:inline">{new Date(item.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</span>
+                    </span>
+                  </div>
 
-              {/* === HEADLINE — clickable link === */}
-              {hasLink ? (
-                <a href={item.link!} target="_blank" rel="noopener noreferrer"
-                  className={cn(
-                    'text-[11px] sm:text-[12px] leading-snug tracking-tight hover:underline cursor-pointer',
-                    item.urgency === 'FLASH'    && 'text-white font-bold',
-                    item.urgency === 'URGENT'   && 'text-[var(--t1-text-primary)] font-semibold',
-                    item.urgency === 'BULLETIN' && 'text-[var(--t1-text-primary)] font-medium',
-                    item.urgency === 'NORMAL'   && 'text-[var(--t1-text-secondary)] font-normal',
-                  )}>
-                  {item.headline}
-                </a>
-              ) : (
-                <p className={cn(
-                  'text-[11px] sm:text-[12px] leading-snug tracking-tight',
-                  item.urgency === 'FLASH'    && 'text-white font-bold',
-                  item.urgency === 'URGENT'   && 'text-[var(--t1-text-primary)] font-semibold',
-                  item.urgency === 'BULLETIN' && 'text-[var(--t1-text-primary)] font-medium',
-                  item.urgency === 'NORMAL'   && 'text-[var(--t1-text-secondary)] font-normal',
-                )}>
-                  {item.headline}
-                </p>
-              )}
-
-              {/* === SOURCE ROW + ACTIONS === */}
-              <div className="flex items-center gap-1.5 mt-0.5 sm:mt-1">
-                <span className="text-[8px] sm:text-[9px] font-mono font-bold" style={{ color: srcCfg.color }}>
-                  {srcCfg.icon} {item.source}
-                </span>
-                {relatedCount > 1 && (
-                  <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-sm text-[8px] font-mono bg-[var(--t1-bg-tertiary)] text-[var(--t1-text-muted)] border border-[var(--t1-border)]">
-                    {relatedCount} in last 24h
-                  </span>
-                )}
-                {/* Open article link */}
-                {hasLink && (
-                  <a href={item.link!} target="_blank" rel="noopener noreferrer"
-                    className="hidden sm:flex items-center gap-1 text-[8px] sm:text-[9px] text-[var(--t1-text-muted)] opacity-0 group-hover:opacity-100 transition-opacity hover:text-white">
-                    <ExternalLink size={9} /> Open article
-                  </a>
-                )}
-                {/* Bookmark button */}
-                <button
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    if (!user) { setShowAuthGate(true); return; }
-                    const newSaved = new Set(savedIds);
-                    if (isSaved) {
-                      newSaved.delete(item.headline);
-                      setSavedIds(newSaved);
-                      await unsaveNewsItem(user.id, item.headline);
-                    } else {
-                      newSaved.add(item.headline);
-                      setSavedIds(newSaved);
-                      await saveNewsItem({
-                        user_id: user.id,
-                        headline: item.headline.slice(0, 500),
-                        source: item.source,
-                        category: item.category,
-                        urgency: item.urgency,
-                        link: item.link ?? null,
-                        region: item.region ?? null,
-                        ticker: item.ticker ?? null,
-                      });
-                    }
-                  }}
-                  title={isSaved ? 'Unsave' : 'Save for later'}
-                  className={cn(
-                    'ml-auto flex items-center gap-1 p-1 rounded transition-all',
-                    isSaved
-                      ? 'text-[var(--t1-accent-green)]'
-                      : 'text-[var(--t1-text-muted)] opacity-0 group-hover:opacity-100 hover:text-[var(--t1-accent-green)]',
+                  {/* Headline */}
+                  {hasLink ? (
+                    <a href={item.link!} target="_blank" rel="noopener noreferrer"
+                      className={cn(
+                        'block text-[13px] sm:text-[15px] leading-snug tracking-tight hover:underline decoration-[var(--t1-text-muted)]/30 underline-offset-2',
+                        item.urgency === 'FLASH'    && 'text-white font-bold',
+                        item.urgency === 'URGENT'   && 'text-[var(--t1-text-primary)] font-semibold',
+                        item.urgency === 'BULLETIN' && 'text-[var(--t1-text-primary)] font-medium',
+                        item.urgency === 'NORMAL'   && 'text-[var(--t1-text-secondary)] font-normal',
+                      )}>
+                      {item.headline}
+                    </a>
+                  ) : (
+                    <p className={cn(
+                      'text-[13px] sm:text-[15px] leading-snug tracking-tight',
+                      item.urgency === 'FLASH'    && 'text-white font-bold',
+                      item.urgency === 'URGENT'   && 'text-[var(--t1-text-primary)] font-semibold',
+                      item.urgency === 'BULLETIN' && 'text-[var(--t1-text-primary)] font-medium',
+                      item.urgency === 'NORMAL'   && 'text-[var(--t1-text-secondary)] font-normal',
+                    )}>
+                      {item.headline}
+                    </p>
                   )}
-                >
-                  {isSaved ? <BookmarkCheck size={11} /> : <Bookmark size={11} />}
-                </button>
+
+                  {/* Storyline tag */}
+                  {item.storyline && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-[var(--t1-accent-orange)]/15 text-[var(--t1-accent-orange)] border border-[var(--t1-accent-orange)]/25">
+                      📌 {item.storyline}
+                    </span>
+                  )}
+
+                  {/* Description & Indicator */}
+                  <div className="space-y-1.5">
+                    <p className="text-[11px] sm:text-xs leading-relaxed text-[var(--t1-text-muted)] font-medium">
+                      <span className="text-[10px] sm:text-[11px] font-bold text-[var(--t1-text-primary)] tracking-wide uppercase mr-1">
+                        [{whyThisMatters(item).indicator}]
+                      </span>
+                      {whyThisMatters(item).text}
+                    </p>
+                    <p className="text-[9px] font-mono tracking-widest text-[var(--t1-accent-orange)]/80 uppercase">
+                      {whyThisMatters(item).keywords}
+                    </p>
+                  </div>
+
+                  {/* Ticker badges */}
+                  {item.ticker && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono border border-[var(--t1-accent-green)]/25 bg-[var(--t1-accent-green)]/8 text-[var(--t1-accent-green)] font-bold">
+                        ${item.ticker}
+                        {tickerInfo && (
+                          <span className={tickerInfo.changePercent >= 0 ? '' : 'text-[var(--t1-accent-red)]'}>
+                            {' '}{tickerInfo.changePercent >= 0 ? '▲' : '▼'}{' '}{Math.abs(tickerInfo.changePercent).toFixed(1)}%
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Brief */}
+                  {briefForId === item.id && briefMode && (
+                    <div className="rounded bg-[var(--t1-bg-primary)] border border-[var(--t1-border)] px-3 py-2 text-xs text-[var(--t1-text-secondary)] space-y-1">
+                      {briefMode === '10s' && <p>{item.headline}</p>}
+                      {briefMode === '30s' && (
+                        <ul className="list-disc list-inside space-y-0.5">
+                          <li>What: {item.headline}</li>
+                          <li>Why: {whyThisMatters(item).text}</li>
+                          <li>Next: {watchNextHint(item)}</li>
+                        </ul>
+                      )}
+                      {briefMode === '2m' && (
+                        <ul className="list-disc list-inside space-y-0.5">
+                          <li>What: {item.headline}</li>
+                          <li>Why: {whyThisMatters(item).text}</li>
+                          <li>Status: {item.urgency === 'FLASH' ? 'Escalated to FLASH.' : 'Evolving.'}</li>
+                          <li>Next: {watchNextHint(item)}</li>
+                        </ul>
+                      )}
+                    </div>
+                  )}
+
+                  {/* === BOTTOM ROW: source + actions === */}
+                  <div className="flex items-center gap-2 pt-2 border-t border-[var(--t1-border)]/30">
+                    <span className="text-[10px] font-mono" style={{ color: srcCfg.color }}>
+                      via <span className="font-bold">{item.source}</span>
+                    </span>
+                    {relatedCount > 1 && (
+                      <span className="text-[9px] font-mono text-[var(--t1-text-muted)]">· {relatedCount} sources</span>
+                    )}
+                    <span className="flex-1" />
+                    <span className="text-[10px] font-mono text-[var(--t1-accent-orange)]">🔥 {impactScore(item)}</span>
+                    <div className="flex items-center gap-0.5 text-[10px] font-mono text-[var(--t1-text-muted)]">
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!user) { setShowAuthGate(true); return; }
+                          const newSaved = new Set(savedIds);
+                          if (isSaved) {
+                            newSaved.delete(item.headline);
+                            setSavedIds(newSaved);
+                            await unsaveNewsItem(user.id, item.headline);
+                          } else {
+                            newSaved.add(item.headline);
+                            setSavedIds(newSaved);
+                            await saveNewsItem({ user_id: user.id, headline: item.headline.slice(0, 500), source: item.source, category: item.category, urgency: item.urgency, link: item.link ?? null, region: item.region ?? null, ticker: item.ticker ?? null });
+                          }
+                        }}
+                        className={cn('px-1 py-0.5 rounded hover:bg-[var(--t1-bg-tertiary)] transition-colors', isSaved ? 'text-[var(--t1-accent-green)]' : 'hover:text-[var(--t1-accent-green)]')}
+                      >
+                        [ {isSaved ? 'saved' : 'save'} ]
+                      </button>
+                      {hasLink && (
+                        <a href={item.link!} target="_blank" rel="noopener noreferrer" className="px-1 py-0.5 rounded hover:bg-[var(--t1-bg-tertiary)] hover:text-white transition-colors">
+                          [ share ]
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           );
+
         })}
 
         {/* Empty states */}
