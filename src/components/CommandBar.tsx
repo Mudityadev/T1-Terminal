@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { Search, Terminal, X, ChevronRight } from 'lucide-react';
 import { useMarketStore } from '@/store/market-store';
+import { useTheme } from '@/components/ThemeProvider';
 
 const COMMANDS = [
   { cmd: 'TOP', desc: 'Market Overview' },
@@ -13,6 +14,9 @@ const COMMANDS = [
   { cmd: 'CMDTY', desc: 'Commodities' },
   { cmd: 'ECO', desc: 'Economic Calendar' },
   { cmd: 'GOVT', desc: 'Government Bonds' },
+  { cmd: 'THEME MATRIX', desc: 'Apply Phosphor Green Theme' },
+  { cmd: 'THEME AMBER', desc: 'Apply Retro Amber Theme' },
+  { cmd: 'THEME DEFAULT', desc: 'Apply Default Dark Theme' },
 ];
 
 export default function CommandBar() {
@@ -20,6 +24,7 @@ export default function CommandBar() {
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const { watchlist, setSelectedSymbol } = useMarketStore();
+  const { setTheme } = useTheme();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -116,6 +121,13 @@ export default function CommandBar() {
             {filteredCommands.map(c => (
               <button
                 key={c.cmd}
+                onClick={() => {
+                  if (c.cmd === 'THEME MATRIX') setTheme('matrix');
+                  else if (c.cmd === 'THEME AMBER') setTheme('amber');
+                  else if (c.cmd === 'THEME DEFAULT') setTheme('default');
+                  setQuery('');
+                  setFocused(false);
+                }}
                 className="w-full flex items-center justify-between px-2 py-1.5 rounded hover:bg-[var(--t1-bg-tertiary)] transition-colors text-left"
               >
                 <div className="flex items-center gap-3">

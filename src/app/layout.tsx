@@ -3,6 +3,7 @@ import { JetBrains_Mono, Inter } from "next/font/google";
 import { AuthProvider } from "@/components/AuthProvider";
 import AnalyticsWrapper from "@/components/AnalyticsWrapper";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ThemeProvider } from "@/components/ThemeProvider";
 import "./globals.css";
 
 const jetbrainsMono = JetBrains_Mono({
@@ -40,10 +41,12 @@ export default function RootLayout({
         className={`${jetbrainsMono.variable} ${inter.variable} font-sans antialiased bg-[var(--t1-bg-primary)] text-[var(--t1-text-primary)]`}
       >
         <AuthProvider>
-          <TooltipProvider>
-            <AnalyticsWrapper />
-            {children}
-          </TooltipProvider>
+          <ThemeProvider>
+            <TooltipProvider>
+              <AnalyticsWrapper />
+              {children}
+            </TooltipProvider>
+          </ThemeProvider>
         </AuthProvider>
       </body>
     </html>

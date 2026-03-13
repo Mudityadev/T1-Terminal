@@ -34,24 +34,33 @@ type RefEntry = {
   changeEl: HTMLElement | null;
   badgeEl: HTMLElement | null;
   prevValue: number;
+  onTick?: (newVal: number) => void;
 };
 
-const indexRefs: Map<string, RefEntry> = new Map();
-const currencyRefs: Map<string, RefEntry> = new Map();
-const commodityRefs: Map<string, RefEntry> = new Map();
-const watchlistRefs: Map<string, RefEntry> = new Map();
+const indexRefs: Map<string, Set<RefEntry>> = new Map();
+const currencyRefs: Map<string, Set<RefEntry>> = new Map();
+const commodityRefs: Map<string, Set<RefEntry>> = new Map();
+const watchlistRefs: Map<string, Set<RefEntry>> = new Map();
 
 export function registerIndexRef(symbol: string, entry: RefEntry) {
-  indexRefs.set(symbol, entry);
+  if (!indexRefs.has(symbol)) indexRefs.set(symbol, new Set());
+  indexRefs.get(symbol)!.add(entry);
+  return () => { indexRefs.get(symbol)?.delete(entry); }
 }
 export function registerCurrencyRef(pair: string, entry: RefEntry) {
-  currencyRefs.set(pair, entry);
+  if (!currencyRefs.has(pair)) currencyRefs.set(pair, new Set());
+  currencyRefs.get(pair)!.add(entry);
+  return () => { currencyRefs.get(pair)?.delete(entry); }
 }
 export function registerCommodityRef(symbol: string, entry: RefEntry) {
-  commodityRefs.set(symbol, entry);
+  if (!commodityRefs.has(symbol)) commodityRefs.set(symbol, new Set());
+  commodityRefs.get(symbol)!.add(entry);
+  return () => { commodityRefs.get(symbol)?.delete(entry); }
 }
 export function registerWatchlistRef(symbol: string, entry: RefEntry) {
-  watchlistRefs.set(symbol, entry);
+  if (!watchlistRefs.has(symbol)) watchlistRefs.set(symbol, new Set());
+  watchlistRefs.get(symbol)!.add(entry);
+  return () => { watchlistRefs.get(symbol)?.delete(entry); }
 }
 
 // ===== FORMATTING (inlined for speed, avoid Intl overhead) =====
@@ -87,19 +96,22 @@ function tickOnce() {
     idx.changePercent = (idx.change / (idx.value - idx.change)) * 100;
 
     // Direct DOM update
-    const ref = indexRefs.get(idx.symbol);
-    if (ref) {
+    const refs = indexRefs.get(idx.symbol);
+    if (refs) {
       const isUp = delta >= 0;
-      if (ref.valueEl) ref.valueEl.textContent = fastFormatNumber(idx.value);
-      if (ref.changeEl) {
-        ref.changeEl.textContent = `${isUp ? '▲' : '▼'} ${fastFormatPercent(idx.changePercent)}`;
-        ref.changeEl.className = `text-[10px] font-bold px-1.5 py-0.5 rounded font-mono transition-colors duration-75 ${
-          idx.change >= 0
-            ? 'bg-[rgba(34,197,94,0.15)] text-[var(--t1-accent-green)]'
-            : 'bg-[rgba(239,68,68,0.15)] text-[var(--t1-accent-red)]'
-        }`;
-      }
-      flashElement(ref.valueEl, isUp);
+      refs.forEach(ref => {
+        if (ref.valueEl) ref.valueEl.textContent = fastFormatNumber(idx.value);
+        if (ref.changeEl) {
+          ref.changeEl.textContent = `${isUp ? '▲' : '▼'} ${fastFormatPercent(idx.changePercent)}`;
+          ref.changeEl.className = `text-[10px] font-bold px-1.5 py-0.5 rounded font-mono transition-colors duration-75 ${
+            idx.change >= 0
+              ? 'bg-[rgba(34,197,94,0.15)] text-[var(--t1-accent-green)]'
+              : 'bg-[rgba(239,68,68,0.15)] text-[var(--t1-accent-red)]'
+          }`;
+        }
+        flashElement(ref.valueEl, isUp);
+        if (ref.onTick) ref.onTick(idx.value);
+      });
     }
   }
 
@@ -111,16 +123,18 @@ function tickOnce() {
     cur.change += delta;
     cur.changePercent = (cur.change / (cur.rate - cur.change)) * 100;
 
-    const ref = currencyRefs.get(cur.pair);
-    if (ref) {
-      if (ref.valueEl) ref.valueEl.textContent = cur.rate.toFixed(4);
-      if (ref.changeEl) {
-        ref.changeEl.textContent = fastFormatPercent(cur.changePercent);
-        ref.changeEl.className = `text-[10px] font-mono font-bold w-16 text-right transition-colors duration-75 ${
-          cur.change >= 0 ? 'text-[var(--t1-accent-green)]' : 'text-[var(--t1-accent-red)]'
-        }`;
-      }
-      flashElement(ref.valueEl, delta >= 0);
+    const refs = currencyRefs.get(cur.pair);
+    if (refs) {
+      refs.forEach(ref => {
+        if (ref.valueEl) ref.valueEl.textContent = cur.rate.toFixed(4);
+        if (ref.changeEl) {
+          ref.changeEl.textContent = fastFormatPercent(cur.changePercent);
+          ref.changeEl.className = `text-[10px] font-mono font-bold w-16 text-right transition-colors duration-75 ${
+            cur.change >= 0 ? 'text-[var(--t1-accent-green)]' : 'text-[var(--t1-accent-red)]'
+          }`;
+        }
+        flashElement(ref.valueEl, delta >= 0);
+      });
     }
   }
 
@@ -132,18 +146,21 @@ function tickOnce() {
     com.change += delta;
     com.changePercent = (com.change / (com.price - com.change)) * 100;
 
-    const ref = commodityRefs.get(com.symbol);
-    if (ref) {
-      if (ref.valueEl) {
-        ref.valueEl.textContent = '$' + (com.price < 10 ? com.price.toFixed(3) : fastFormatNumber(com.price)) + com.unit;
-      }
-      if (ref.changeEl) {
-        ref.changeEl.textContent = fastFormatPercent(com.changePercent);
-        ref.changeEl.className = `text-[10px] font-mono font-bold w-16 text-right transition-colors duration-75 ${
-          com.change >= 0 ? 'text-[var(--t1-accent-green)]' : 'text-[var(--t1-accent-red)]'
-        }`;
-      }
-      flashElement(ref.valueEl, delta >= 0);
+    const refs = commodityRefs.get(com.symbol);
+    if (refs) {
+      refs.forEach(ref => {
+        if (ref.valueEl) {
+          ref.valueEl.textContent = '$' + (com.price < 10 ? com.price.toFixed(3) : fastFormatNumber(com.price)) + com.unit;
+        }
+        if (ref.changeEl) {
+          ref.changeEl.textContent = fastFormatPercent(com.changePercent);
+          ref.changeEl.className = `text-[10px] font-mono font-bold w-16 text-right transition-colors duration-75 ${
+            com.change >= 0 ? 'text-[var(--t1-accent-green)]' : 'text-[var(--t1-accent-red)]'
+          }`;
+        }
+        flashElement(ref.valueEl, delta >= 0);
+        if (ref.onTick) ref.onTick(com.price);
+      });
     }
   }
 
@@ -157,16 +174,18 @@ function tickOnce() {
     item.sparkline.shift();
     item.sparkline.push(item.price);
 
-    const ref = watchlistRefs.get(item.symbol);
-    if (ref) {
-      if (ref.valueEl) ref.valueEl.textContent = '$' + fastFormatNumber(item.price);
-      if (ref.changeEl) {
-        ref.changeEl.textContent = fastFormatPercent(item.changePercent);
-        ref.changeEl.className = `text-[10px] font-mono transition-colors duration-75 ${
-          item.change >= 0 ? 'text-[var(--t1-accent-green)]' : 'text-[var(--t1-accent-red)]'
-        }`;
-      }
-      flashElement(ref.valueEl, delta >= 0);
+    const refs = watchlistRefs.get(item.symbol);
+    if (refs) {
+      refs.forEach(ref => {
+        if (ref.valueEl) ref.valueEl.textContent = '$' + fastFormatNumber(item.price);
+        if (ref.changeEl) {
+          ref.changeEl.textContent = fastFormatPercent(item.changePercent);
+          ref.changeEl.className = `text-[10px] font-mono transition-colors duration-75 ${
+            item.change >= 0 ? 'text-[var(--t1-accent-green)]' : 'text-[var(--t1-accent-red)]'
+          }`;
+        }
+        flashElement(ref.valueEl, delta >= 0);
+      });
     }
   }
 }
