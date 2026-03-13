@@ -52,7 +52,7 @@ export default function CommandBar() {
   return (
     <div className="relative z-50">
       {/* Command Bar */}
-      <div className="flex items-center h-10 glass border-b border-[var(--t1-border)]">
+      <div className="flex items-center h-11 sm:h-10 glass border-b border-[var(--t1-border)]">
 
         {/* T1 Logo — fixed width, never shrinks */}
         <div className="flex items-center gap-2 px-3 border-r border-[var(--t1-border)] h-full shrink-0">
@@ -61,7 +61,7 @@ export default function CommandBar() {
         </div>
 
         {/* Search area — takes remaining space, icon inside, no overlap */}
-        <div className="flex-1 flex items-center min-w-0 px-3 gap-2">
+        <div className="flex-1 flex items-center min-w-0 px-2 sm:px-3 gap-1.5 sm:gap-2">
           <Search size={13} className="shrink-0 text-[var(--t1-text-muted)]" />
           <input
             ref={inputRef}
@@ -71,7 +71,7 @@ export default function CommandBar() {
             onFocus={() => setFocused(true)}
             onBlur={() => setTimeout(() => setFocused(false), 200)}
             placeholder="Search ticker, function, or type command…"
-            className="flex-1 min-w-0 bg-transparent text-sm text-[var(--t1-text-primary)] placeholder:text-[var(--t1-text-muted)] outline-none font-mono"
+            className="flex-1 min-w-0 bg-transparent text-[13px] sm:text-sm text-[var(--t1-text-primary)] placeholder:text-[var(--t1-text-muted)] outline-none font-mono"
           />
           <div className="hidden sm:flex shrink-0 items-center gap-1 text-[10px] text-[var(--t1-text-muted)] font-mono">
             <kbd className="px-1.5 py-0.5 rounded bg-[var(--t1-bg-tertiary)] border border-[var(--t1-border)]">Ctrl</kbd>
