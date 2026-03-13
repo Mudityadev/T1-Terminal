@@ -33,9 +33,9 @@ export default function Home() {
 
         {/* Main content — LIVE INTELLIGENCE focus */}
         <main className="flex-1 w-full flex">
-          <div className="flex-1 flex flex-col max-w-6xl mx-auto w-full px-2 sm:px-3 md:px-4 lg:px-6 py-2 md:py-3">
+          <div className="flex-1 flex flex-col w-full max-w-[1600px] mx-auto px-1.5 sm:px-3 md:px-4 lg:px-6 py-2 md:py-3">
             <FadeIn delay={150} duration={600} direction="up" className="flex-1 flex flex-col min-h-[260px]">
-              <section className="flex-1 glass rounded-lg border border-[var(--t1-border)] overflow-hidden flex flex-col animate-glow-heartbeat">
+              <section className="flex-1 min-h-0 glass rounded-lg border border-[var(--t1-border)] overflow-hidden flex flex-col animate-glow-heartbeat">
                 <NewsFeed />
               </section>
             </FadeIn>

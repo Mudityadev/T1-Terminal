@@ -35,13 +35,13 @@ export default function StatusBar({ onFeedback }: Props) {
   const localTime = mounted && time ? time.toLocaleTimeString('en-US', { hour12: false }) : '--:--:--';
 
   return (
-    <div className="h-7 flex items-center justify-between px-3 glass border-t border-[var(--t1-border)] text-[9px] font-mono shrink-0">
+    <div className="min-h-7 py-1 flex items-center justify-between px-2 sm:px-3 gap-2 glass border-t border-[var(--t1-border)] text-[10px] font-mono shrink-0">
       {/* Left */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
         <div className="flex items-center gap-1.5 text-[var(--t1-accent-green)]">
           <Wifi size={9} /><span>CONNECTED</span>
         </div>
-        <div className="flex items-center gap-1.5 text-[var(--t1-text-muted)]">
+        <div className="hidden sm:flex items-center gap-1.5 text-[var(--t1-text-muted)]">
           <Activity size={9} className="text-[var(--t1-accent-green)] animate-pulse-glow" /><span>LIVE DATA</span>
         </div>
         {session && (
@@ -52,7 +52,7 @@ export default function StatusBar({ onFeedback }: Props) {
       </div>
 
       {/* Right */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
         {/* About */}
         <a href="/about" className="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-[var(--t1-bg-tertiary)] text-[var(--t1-text-muted)] hover:text-white transition-colors">
           <Info size={9} /><span className="hidden sm:inline">About</span>
