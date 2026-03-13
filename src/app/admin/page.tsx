@@ -36,8 +36,7 @@ export default async function AdminOverview() {
   // Supabase types for listUsers returns a union where `total` exists on the success branch.
   const totalUsers =
     'users' in usersRes.data && 'total' in usersRes.data
-      ? // @ts-expect-error – Supabase types are a bit awkward here, but `total` exists on the success shape.
-        usersRes.data.total ?? fullUsersRes.data?.users?.length ?? 0
+      ? usersRes.data.total ?? fullUsersRes.data?.users?.length ?? 0
       : fullUsersRes.data?.users?.length ?? 0
 
   const recentUsers = (fullUsersRes.data?.users ?? [])
