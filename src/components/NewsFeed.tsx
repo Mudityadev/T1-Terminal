@@ -83,6 +83,7 @@ type SortMode = 'newest' | 'oldest' | 'urgency' | 'source';
 
 const URGENCY_ORDER: Record<IntelUrgency, number> = { FLASH: 0, URGENT: 1, BULLETIN: 2, NORMAL: 3 };
 const MAX_ITEMS = 200;
+const CACHE_KEY = 't1_live_intel_cache_v1';
 
 export default function NewsFeed() {
   const [items, setItems] = useState<IntelItem[]>([]);
@@ -100,6 +101,11 @@ export default function NewsFeed() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [showAuthGate, setShowAuthGate] = useState(false);
+  const [followedStories, setFollowedStories] = useState<Set<string>>(new Set());
+  const [mutedSources, setMutedSources] = useState<Set<string>>(new Set());
+  const [mutedStories, setMutedStories] = useState<Set<string>>(new Set());
+  const [briefForId, setBriefForId] = useState<string | null>(null);
+  const [briefMode, setBriefMode] = useState<'10s' | '30s' | '2m' | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const soundRef = useRef(false);
@@ -112,6 +118,72 @@ export default function NewsFeed() {
 
   soundRef.current = soundEnabled;
   pausedRef.current = isPaused;
+
+  // ===== Helpers for storyline & explanations =====
+  function storylineKey(item: IntelItem): string {
+    if (item.ticker) return `T:${item.ticker.toUpperCase()}`;
+    if (item.region) return `R:${item.region.toLowerCase()}`;
+    return `C:${item.category}`;
+  }
+
+  function whyThisMatters(item: IntelItem): string {
+    const h = item.headline.toLowerCase();
+    if (item.category === 'MARKETS' || /stock|index|yield|bond|rally|crash/.test(h)) {
+      return 'Shifts sentiment and risk across global markets and portfolios.';
+    }
+    if (item.category === 'GEOPOLITICS') {
+      return 'Alters geopolitical risk, trade flows, and regional stability.';
+    }
+    if (item.category === 'ECONOMICS' || /inflation|gdp|recession|central bank/.test(h)) {
+      return 'Impacts growth expectations, central bank paths, and asset pricing.';
+    }
+    if (item.category === 'TECH') {
+      return 'Repositions power in AI, chips, and critical infrastructure providers.';
+    }
+    if (item.category === 'ENERGY') {
+      return 'Moves energy security, input costs, and inflation expectations.';
+    }
+    if (item.category === 'DEFENSE') {
+      return 'Signals shifts in hard power, deterrence, and conflict readiness.';
+    }
+    if (item.category === 'CYBER') {
+      return 'Changes operational risk surface across networks and critical systems.';
+    }
+    return 'Changes the risk and opportunity landscape for operators watching this feed.';
+  }
+
+  function watchNextHint(item: IntelItem): string {
+    if (item.category === 'GEOPOLITICS') {
+      return 'Official statements, ceasefire moves, and market-open reaction.';
+    }
+    if (item.category === 'MARKETS') {
+      return 'Futures, cash open, and cross-asset spillover into FX and credit.';
+    }
+    if (item.category === 'ECONOMICS') {
+      return 'Central bank commentary, curve moves, and equity sector shifts.';
+    }
+    if (item.category === 'TECH') {
+      return 'Earnings calls, regulator moves, and peer reactions in the sector.';
+    }
+    return 'Subsequent confirmations, policy moves, and how markets reprice this.';
+  }
+
+  function impactScore(item: IntelItem): number {
+    // Simple heuristic 0–100 based on urgency + category
+    let base =
+      item.urgency === 'FLASH' ? 80 :
+      item.urgency === 'URGENT' ? 65 :
+      item.urgency === 'BULLETIN' ? 50 :
+      35;
+
+    if (item.category === 'GEOPOLITICS' || item.category === 'ECONOMICS') {
+      base += 10;
+    } else if (item.category === 'MARKETS' || item.category === 'DEFENSE') {
+      base += 5;
+    }
+
+    return Math.max(10, Math.min(99, Math.round(base)));
+  }
 
   const handleNewItem = useCallback((item: IntelItem) => {
     // Client-side dedup — skip if we've already rendered this id or headline
@@ -134,6 +206,21 @@ export default function NewsFeed() {
 
   const handleMetrics = useCallback((ipm: number, total: number, latencyMs: number, status: string) => {
     setMetrics({ ipm, total, latencyMs, status });
+  }, []);
+
+  // Hydrate from local cache so first paint is never empty
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      const raw = window.localStorage.getItem(CACHE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as IntelItem[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        setItems(parsed.slice(0, MAX_ITEMS));
+      }
+    } catch {
+      // ignore cache errors
+    }
   }, []);
 
   useEffect(() => {
@@ -232,6 +319,15 @@ export default function NewsFeed() {
       result = result.filter(i => activeSources.has(i.source as SourceType));
     }
 
+    // Mute filters (sources and storylines)
+    if (mutedSources.size > 0 || mutedStories.size > 0) {
+      result = result.filter((i) => {
+        if (mutedSources.has(i.source)) return false;
+        if (mutedStories.size > 0 && mutedStories.has(storylineKey(i))) return false;
+        return true;
+      });
+    }
+
     // Search
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -251,7 +347,7 @@ export default function NewsFeed() {
     else if (sortMode === 'urgency') arr.sort((a, b) => URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency]);
     else if (sortMode === 'source') arr.sort((a, b) => a.source.localeCompare(b.source));
     return arr;
-  }, [items, activeFilter, activeSources, searchQuery, sortMode]);
+  }, [items, activeFilter, activeSources, mutedSources, mutedStories, searchQuery, sortMode]);
 
   const flashCount   = useMemo(() => items.filter(i => i.urgency === 'FLASH').length, [items]);
   const urgentCount  = useMemo(() => items.filter(i => i.urgency === 'URGENT').length, [items]);
@@ -294,6 +390,18 @@ export default function NewsFeed() {
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
     return counts;
+  }, [items]);
+
+  // Persist cache so landing is never empty
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      if (items.length === 0) return;
+      const toStore = items.slice(0, 80);
+      window.localStorage.setItem(CACHE_KEY, JSON.stringify(toStore));
+    } catch {
+      // ignore
+    }
   }, [items]);
 
   // ===== Keyboard shortcuts for operator productivity =====
@@ -604,12 +712,10 @@ export default function NewsFeed() {
               onMouseEnter={() => setHoveredId(item.id)}
               onMouseLeave={() => setHoveredId(null)}
               className={cn(
-                'group relative flex flex-col gap-1.5 px-2 sm:px-3 py-2.5 sm:py-3 rounded-lg border transition-all duration-150',
+                'group relative flex flex-col gap-1.5 px-2 sm:px-3 py-2.5 sm:py-3 rounded-lg border transition-colors',
                 style.border,
                 style.bg,
-                isNewest && 'animate-slide-in-right',
-                item.urgency === 'FLASH' && 'hft-news-flash',
-                hoveredId === item.id && 'brightness-125',
+                hoveredId === item.id && 'brightness-110',
                 isSelected && 'ring-1 ring-[var(--t1-accent-green)] ring-offset-0 border-[var(--t1-border-glow)]'
               )}
             >
@@ -655,9 +761,13 @@ export default function NewsFeed() {
                     <span>{item.region}</span>
                   </span>
                 )}
-                {/* Time */}
-                <span className="ml-auto text-[9px] sm:text-[10px] text-[var(--t1-text-muted)] font-mono tabular-nums">
-                  {fastRelativeTime(item.timestamp)}
+                {/* Time + impact */}
+                <span className="ml-auto flex items-center gap-2 text-[9px] sm:text-[10px] text-[var(--t1-text-muted)] font-mono tabular-nums">
+                  <span>{fastRelativeTime(item.timestamp)}</span>
+                  <span className="hidden sm:inline-flex items-center gap-1">
+                    <span className="uppercase tracking-tight">Impact</span>
+                    <span className="text-[var(--t1-accent-green)]">{impactScore(item)}</span>
+                  </span>
                 </span>
               </div>
 
@@ -685,6 +795,41 @@ export default function NewsFeed() {
                 </p>
               )}
 
+              {/* === WHY THIS MATTERS + BRIEF PREVIEW === */}
+              <div className="mt-0.5 sm:mt-1 space-y-0.5">
+                <p className="text-[9px] sm:text-[10px] text-[var(--t1-text-muted)]">
+                  <span className="font-semibold">Why this matters:</span> {whyThisMatters(item)}
+                </p>
+                <p className="text-[9px] sm:text-[10px] text-[var(--t1-text-muted)]">
+                  <span className="font-semibold">Watch next:</span> {watchNextHint(item)}
+                </p>
+                {briefForId === item.id && briefMode && (
+                  <div className="mt-0.5 rounded-md bg-[var(--t1-bg-tertiary)]/60 border border-[var(--t1-border)] px-2 py-1.5 space-y-0.5">
+                    {briefMode === '10s' && (
+                      <p className="text-[9px] sm:text-[10px] text-[var(--t1-text-secondary)]">
+                        {item.headline}
+                      </p>
+                    )}
+                    {briefMode === '30s' && (
+                      <ul className="text-[9px] sm:text-[10px] text-[var(--t1-text-secondary)] list-disc list-inside space-y-0.5">
+                        <li>What happened: {item.headline}</li>
+                        <li>Why this matters: {whyThisMatters(item)}</li>
+                        <li>What to watch: {watchNextHint(item)}</li>
+                      </ul>
+                    )}
+                    {briefMode === '2m' && (
+                      <ul className="text-[9px] sm:text-[10px] text-[var(--t1-text-secondary)] list-disc list-inside space-y-0.5">
+                        <li>What happened: {item.headline}</li>
+                        <li>Why this matters: {whyThisMatters(item)}</li>
+                        <li>What changed: {item.urgency === 'FLASH' ? 'Situation escalated to FLASH status.' : 'Situation continues to evolve.'}</li>
+                        <li>What to watch next: {watchNextHint(item)}</li>
+                        <li>Open original article for full context.</li>
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* === SOURCE ROW + ACTIONS === */}
               <div className="flex items-center gap-1.5 mt-0.5 sm:mt-1">
                 <span className="text-[8px] sm:text-[9px] font-mono font-bold" style={{ color: srcCfg.color }}>
@@ -695,48 +840,142 @@ export default function NewsFeed() {
                     {relatedCount} in last 24h
                   </span>
                 )}
+                {/* Spacer to push actions right */}
+                <span className="flex-1" />
+
+                {/* Brief actions */}
+                <div className="hidden sm:flex items-center gap-1 text-[8px] sm:text-[9px] text-[var(--t1-text-muted)]">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setBriefForId(item.id);
+                      setBriefMode('10s');
+                    }}
+                    className="hover:text-[var(--t1-text-secondary)]"
+                  >
+                    10s brief
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setBriefForId(item.id);
+                      setBriefMode('30s');
+                    }}
+                    className="hover:text-[var(--t1-text-secondary)]"
+                  >
+                    30s
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setBriefForId(item.id);
+                      setBriefMode('2m');
+                    }}
+                    className="hover:text-[var(--t1-text-secondary)]"
+                  >
+                    2m
+                  </button>
+                </div>
+
                 {/* Open article link */}
                 {hasLink && (
-                  <a href={item.link!} target="_blank" rel="noopener noreferrer"
-                    className="hidden sm:flex items-center gap-1 text-[8px] sm:text-[9px] text-[var(--t1-text-muted)] opacity-0 group-hover:opacity-100 transition-opacity hover:text-white">
-                    <ExternalLink size={9} /> Open article
+                  <a
+                    href={item.link!}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hidden sm:flex items-center gap-1 text-[8px] sm:text-[9px] text-[var(--t1-text-muted)] opacity-0 group-hover:opacity-100 transition-opacity hover:text-white"
+                  >
+                    <ExternalLink size={9} /> Open
                   </a>
                 )}
-                {/* Bookmark button */}
-                <button
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    if (!user) { setShowAuthGate(true); return; }
-                    const newSaved = new Set(savedIds);
-                    if (isSaved) {
-                      newSaved.delete(item.headline);
-                      setSavedIds(newSaved);
-                      await unsaveNewsItem(user.id, item.headline);
-                    } else {
-                      newSaved.add(item.headline);
-                      setSavedIds(newSaved);
-                      await saveNewsItem({
-                        user_id: user.id,
-                        headline: item.headline.slice(0, 500),
-                        source: item.source,
-                        category: item.category,
-                        urgency: item.urgency,
-                        link: item.link ?? null,
-                        region: item.region ?? null,
-                        ticker: item.ticker ?? null,
+
+                {/* Follow / mute / save row */}
+                <div className="flex items-center gap-1 ml-2">
+                  {/* Follow story */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const key = storylineKey(item);
+                      setFollowedStories((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(key)) next.delete(key);
+                        else next.add(key);
+                        return next;
                       });
-                    }
-                  }}
-                  title={isSaved ? 'Unsave' : 'Save for later'}
-                  className={cn(
-                    'ml-auto flex items-center gap-1 p-1 rounded transition-all',
-                    isSaved
-                      ? 'text-[var(--t1-accent-green)]'
-                      : 'text-[var(--t1-text-muted)] opacity-0 group-hover:opacity-100 hover:text-[var(--t1-accent-green)]',
-                  )}
-                >
-                  {isSaved ? <BookmarkCheck size={11} /> : <Bookmark size={11} />}
-                </button>
+                    }}
+                    className="text-[8px] sm:text-[9px] text-[var(--t1-text-muted)] hover:text-[var(--t1-accent-cyan)]"
+                  >
+                    {followedStories.has(storylineKey(item)) ? 'Following' : 'Follow'}
+                  </button>
+
+                  {/* Open timeline (filter view to this storyline via search) */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // Simple first version: narrow search to key parts of the headline
+                      const keyPart = item.ticker || item.region || item.headline.split(' ').slice(0, 4).join(' ');
+                      setSearchQuery(keyPart);
+                    }}
+                    className="text-[8px] sm:text-[9px] text-[var(--t1-text-muted)] hover:text-[var(--t1-accent-green)]"
+                  >
+                    Open timeline
+                  </button>
+
+                  {/* Mute source */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMutedSources((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(item.source)) next.delete(item.source);
+                        else next.add(item.source);
+                        return next;
+                      });
+                    }}
+                    className="text-[8px] sm:text-[9px] text-[var(--t1-text-muted)] hover:text-[var(--t1-accent-red)]"
+                  >
+                    {mutedSources.has(item.source) ? 'Unmute' : 'Mute'}
+                  </button>
+
+                  {/* Bookmark button */}
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (!user) {
+                        setShowAuthGate(true);
+                        return;
+                      }
+                      const newSaved = new Set(savedIds);
+                      if (isSaved) {
+                        newSaved.delete(item.headline);
+                        setSavedIds(newSaved);
+                        await unsaveNewsItem(user.id, item.headline);
+                      } else {
+                        newSaved.add(item.headline);
+                        setSavedIds(newSaved);
+                        await saveNewsItem({
+                          user_id: user.id,
+                          headline: item.headline.slice(0, 500),
+                          source: item.source,
+                          category: item.category,
+                          urgency: item.urgency,
+                          link: item.link ?? null,
+                          region: item.region ?? null,
+                          ticker: item.ticker ?? null,
+                        });
+                      }
+                    }}
+                    title={isSaved ? 'Unsave' : 'Save for later'}
+                    className={cn(
+                      'flex items-center gap-1 p-1 rounded transition-all',
+                      isSaved
+                        ? 'text-[var(--t1-accent-green)]'
+                        : 'text-[var(--t1-text-muted)] opacity-0 group-hover:opacity-100 hover:text-[var(--t1-accent-green)]',
+                    )}
+                  >
+                    {isSaved ? <BookmarkCheck size={11} /> : <Bookmark size={11} />}
+                  </button>
+                </div>
               </div>
             </div>
           );
