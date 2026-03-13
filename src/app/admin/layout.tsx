@@ -3,10 +3,11 @@
 import { useAuth } from '@/components/AuthProvider';
 import {
   LayoutDashboard, Users, MessageSquare, Shield,
-  LogOut, ExternalLink, Loader2, Database,
+  LogOut, ExternalLink, Loader2,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import FadeIn from '@/components/motion/FadeIn';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, loading: authLoading, signOut } = useAuth();
@@ -43,7 +44,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className="min-h-screen bg-[var(--t1-bg-primary)] text-[var(--t1-text-primary)] flex flex-col md:flex-row">
       {/* Sidebar Navigation */}
-      <div className="w-full md:w-64 glass border-b md:border-b-0 md:border-r border-[var(--t1-border)] flex flex-col shrink-0 md:min-h-screen md:sticky md:top-0">
+      <FadeIn delay={0} duration={600} direction="left">
+      <div className="w-full md:w-64 glass border-b md:border-b-0 md:border-r border-[var(--t1-border)] flex flex-col shrink-0 md:min-h-screen md:sticky md:top-0 animate-glow-heartbeat">
         <div className="p-5 border-b border-[var(--t1-border)] flex items-center justify-between md:block">
           <div>
             <div className="flex items-center gap-2">
@@ -87,11 +89,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </button>
         </div>
       </div>
+      </FadeIn>
 
       {/* Main Content Area */}
-      <main className="flex-1 min-w-0 p-4 md:p-8">
-        <div className="w-full max-w-6xl mx-auto">{children}</div>
-      </main>
+      <FadeIn delay={200} duration={600} direction="up" className="flex-1 min-w-0">
+        <main className="p-4 md:p-8 h-full">
+          <div className="w-full max-w-6xl mx-auto">{children}</div>
+        </main>
+      </FadeIn>
     </div>
   );
 }
