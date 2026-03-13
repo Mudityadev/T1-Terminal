@@ -26,7 +26,23 @@ export interface IntelItem {
   imageUrl?: string;
   engagementScore?: number;
   storyline?: string;
+  sentiment?: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
   isReal?: boolean; // true = from API, false = mock fallback
+}
+
+// Basic heuristic logic for sentiment analysis
+function computeSentiment(headline: string, category: IntelCategory): 'BULLISH' | 'BEARISH' | 'NEUTRAL' {
+  const h = headline.toLowerCase();
+  const bullishKeywords = ['surge', 'record', 'high', 'jump', 'gain', 'growth', 'expectations', 'buyback', 'stable', 'bull', 'upgrade'];
+  const bearishKeywords = ['contract', 'weakness', 'tension', 'drop', 'fall', 'escalate', 'cut', 'crash', 'loss', 'bear', 'downgrade', 'sanction'];
+  
+  let score = 0;
+  for (const word of bullishKeywords) { if (h.includes(word)) score++; }
+  for (const word of bearishKeywords) { if (h.includes(word)) score--; }
+  
+  if (score > 0) return 'BULLISH';
+  if (score < 0) return 'BEARISH';
+  return 'NEUTRAL';
 }
 
 // Category-based thumbnail seeds for deterministic images
@@ -150,6 +166,7 @@ async function fetchRealData() {
         ticker: item.ticker,
         engagementScore: item.engagementScore,
         storyline: item.storyline,
+        sentiment: computeSentiment(item.headline, (item.category || 'GEOPOLITICS') as IntelCategory),
         isReal: true,
       });
     }
@@ -175,7 +192,7 @@ async function fetchRealData() {
     if (deliveryQueue.length < 5) {
       const mock = MOCK_HEADLINES[mockIndex % MOCK_HEADLINES.length];
       mockIndex++;
-      deliveryQueue.push({ ...mock, timestamp: Date.now(), isReal: false });
+      deliveryQueue.push({ ...mock, timestamp: Date.now(), sentiment: computeSentiment(mock.headline, mock.category as IntelCategory), isReal: false });
     }
   }
 }
@@ -192,7 +209,7 @@ function deliverNext() {
     // Fallback to mock
     const mock = MOCK_HEADLINES[mockIndex % MOCK_HEADLINES.length];
     mockIndex++;
-    item = { ...mock, timestamp: Date.now(), isReal: false };
+    item = { ...mock, timestamp: Date.now(), sentiment: computeSentiment(mock.headline, mock.category as IntelCategory), isReal: false };
   }
 
   itemCounter++;

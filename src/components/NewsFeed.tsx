@@ -10,6 +10,9 @@ import { fireFlashAlert } from '@/components/FlashAlertBanner';
 import { useAuth } from '@/components/AuthProvider';
 import { saveNewsItem, unsaveNewsItem, fetchSavedHeadlines } from '@/lib/saved-news';
 import { useMarketStore } from '@/store/market-store';
+import { MiniTickerWidget } from '@/components/MiniTickerWidget';
+
+import { commodityBuffer, indexBuffer, currencyBuffer } from '@/lib/hft-engine';
 import {
   Zap, AlertTriangle, Radio, Bell, Volume2, VolumeX,
   ArrowUp, Signal, Activity, ExternalLink, Search,
@@ -749,6 +752,24 @@ export default function NewsFeed() {
             `C:${item.category}`;
           const relatedCount = relatedKeyCounts.get(relatedKey) ?? 0;
 
+          // Contextual matching logic for inline widgets
+          let inlineWidget = null;
+          const headlineLower = item.headline.toLowerCase();
+          
+          if (item.category === 'ENERGY' || headlineLower.includes('oil') || headlineLower.includes('crude')) {
+            const cl = commodityBuffer.find(c => c.symbol === 'CL');
+            if (cl) inlineWidget = <MiniTickerWidget symbol="CL" type="COMMODITY" initialValue={cl.price} initialChangePercent={cl.changePercent} />;
+          } else if (headlineLower.includes('gold') || headlineLower.includes('precious')) {
+            const gc = commodityBuffer.find(c => c.symbol === 'GC');
+            if (gc) inlineWidget = <MiniTickerWidget symbol="GC" type="COMMODITY" initialValue={gc.price} initialChangePercent={gc.changePercent} />;
+          } else if (item.category === 'MARKETS' || headlineLower.includes('s&p') || headlineLower.includes('stocks')) {
+            const spx = indexBuffer.find(i => i.symbol === 'SPX');
+            if (spx) inlineWidget = <MiniTickerWidget symbol="SPX" type="INDEX" initialValue={spx.value} initialChangePercent={spx.changePercent} />;
+          } else if (headlineLower.includes('fed') || headlineLower.includes('rates') || headlineLower.includes('bond')) {
+            const zt = commodityBuffer.find(c => c.symbol === 'ZT'); // Using 2Y Treasury as proxy
+            if (zt) inlineWidget = <MiniTickerWidget symbol="ZT" type="COMMODITY" initialValue={zt.price} initialChangePercent={zt.changePercent} />;
+          }
+
           return (
             <div
               key={item.id}
@@ -764,9 +785,9 @@ export default function NewsFeed() {
               )}
             >
               {/* === MAIN CONTENT === */}
-              <div>
+              <div className="flex w-full h-full">
 
-                {/* Text content */}
+                {/* Left side: Text content (Approx 85-90%) */}
                 <div className="flex-1 min-w-0 p-3 sm:p-4 space-y-2">
                   {/* Tag row */}
                   <div className="flex items-center flex-wrap gap-1.5">
@@ -822,105 +843,115 @@ export default function NewsFeed() {
                     </p>
                   )}
 
-                  {/* Storyline tag */}
-                  {item.storyline && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-[var(--t1-accent-orange)]/15 text-[var(--t1-accent-orange)] border border-[var(--t1-accent-orange)]/25">
-                      📌 {item.storyline}
-                    </span>
+                  {/* Storyline & Sentiment tags */}
+                  {(item.storyline || (item.sentiment && item.sentiment !== 'NEUTRAL')) && (
+                    <div className="flex items-center flex-wrap gap-2">
+                      {item.storyline && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-[var(--t1-accent-orange)]/15 text-[var(--t1-accent-orange)] border border-[var(--t1-accent-orange)]/25">
+                          📌 {item.storyline}
+                        </span>
+                      )}
+                      {item.sentiment && item.sentiment !== 'NEUTRAL' && (
+                        <span className={cn(
+                          "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border",
+                          item.sentiment === 'BULLISH' 
+                            ? 'bg-[var(--t1-accent-green)]/15 text-[var(--t1-accent-green)] border-[var(--t1-accent-green)]/25'
+                            : 'bg-[var(--t1-accent-red)]/15 text-[var(--t1-accent-red)] border-[var(--t1-accent-red)]/25'
+                        )}>
+                          {item.sentiment === 'BULLISH' ? '🚀 BULLISH' : '🩸 BEARISH'}
+                        </span>
+                      )}
+                    </div>
                   )}
 
-                  {/* Description & Indicator */}
-                  <div className="space-y-1.5">
-                    <p className="text-[11px] sm:text-xs leading-relaxed text-[var(--t1-text-muted)] font-medium">
-                      <span className="text-[10px] sm:text-[11px] font-bold text-[var(--t1-text-primary)] tracking-wide uppercase mr-1">
-                        [{whyThisMatters(item).indicator}]
-                      </span>
-                      {whyThisMatters(item).text}
-                    </p>
-                    <p className="text-[9px] font-mono tracking-widest text-[var(--t1-accent-orange)]/80 uppercase">
-                      {whyThisMatters(item).keywords}
-                    </p>
-                  </div>
-
-                  {/* Ticker badges */}
-                  {item.ticker && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono border border-[var(--t1-accent-green)]/25 bg-[var(--t1-accent-green)]/8 text-[var(--t1-accent-green)] font-bold">
-                        ${item.ticker}
-                        {tickerInfo && (
-                          <span className={tickerInfo.changePercent >= 0 ? '' : 'text-[var(--t1-accent-red)]'}>
-                            {' '}{tickerInfo.changePercent >= 0 ? '▲' : '▼'}{' '}{Math.abs(tickerInfo.changePercent).toFixed(1)}%
+                    {/* Description & Indicator */}
+                    <div className="flex gap-4 items-start w-full">
+                      <div className="space-y-1.5 flex-1 w-full overflow-hidden">
+                        <p className="text-[11px] sm:text-xs leading-relaxed text-[var(--t1-text-muted)] font-medium">
+                          <span className="text-[10px] sm:text-[11px] font-bold text-[var(--t1-text-primary)] tracking-wide uppercase mr-1">
+                            [{whyThisMatters(item).indicator}]
                           </span>
+                          {whyThisMatters(item).text}
+                        </p>
+                        <p className="text-[9px] font-mono tracking-widest text-[var(--t1-accent-orange)]/80 uppercase truncate">
+                          {whyThisMatters(item).keywords}
+                        </p>
+                      </div>
+                      
+                      {/* Right-aligned inline ticker widget */}
+                      {inlineWidget && (
+                        <div className="hidden sm:block shrink-0 pt-0.5 animate-fade-in">
+                          {inlineWidget}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Brief */}
+                    {briefForId === item.id && briefMode && (
+                      <div className="rounded bg-[var(--t1-bg-primary)] border border-[var(--t1-border)] px-3 py-2 text-xs text-[var(--t1-text-secondary)] space-y-1">
+                        {briefMode === '10s' && <p>{item.headline}</p>}
+                        {briefMode === '30s' && (
+                          <ul className="list-disc list-inside space-y-0.5">
+                            <li>What: {item.headline}</li>
+                            <li>Why: {whyThisMatters(item).text}</li>
+                            <li>Next: {watchNextHint(item)}</li>
+                          </ul>
                         )}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Brief */}
-                  {briefForId === item.id && briefMode && (
-                    <div className="rounded bg-[var(--t1-bg-primary)] border border-[var(--t1-border)] px-3 py-2 text-xs text-[var(--t1-text-secondary)] space-y-1">
-                      {briefMode === '10s' && <p>{item.headline}</p>}
-                      {briefMode === '30s' && (
-                        <ul className="list-disc list-inside space-y-0.5">
-                          <li>What: {item.headline}</li>
-                          <li>Why: {whyThisMatters(item).text}</li>
-                          <li>Next: {watchNextHint(item)}</li>
-                        </ul>
-                      )}
-                      {briefMode === '2m' && (
-                        <ul className="list-disc list-inside space-y-0.5">
-                          <li>What: {item.headline}</li>
-                          <li>Why: {whyThisMatters(item).text}</li>
-                          <li>Status: {item.urgency === 'FLASH' ? 'Escalated to FLASH.' : 'Evolving.'}</li>
-                          <li>Next: {watchNextHint(item)}</li>
-                        </ul>
-                      )}
-                    </div>
-                  )}
-
-                  {/* === BOTTOM ROW: source + actions === */}
-                  <div className="flex items-center gap-2 pt-2 border-t border-[var(--t1-border)]/30">
-                    <span className="text-[10px] font-mono" style={{ color: srcCfg.color }}>
-                      via <span className="font-bold">{item.source}</span>
-                    </span>
-                    {relatedCount > 1 && (
-                      <span className="text-[9px] font-mono text-[var(--t1-text-muted)]">· {relatedCount} sources</span>
+                        {briefMode === '2m' && (
+                          <ul className="list-disc list-inside space-y-0.5">
+                            <li>What: {item.headline}</li>
+                            <li>Why: {whyThisMatters(item).text}</li>
+                            <li>Status: {item.urgency === 'FLASH' ? 'Escalated to FLASH.' : 'Evolving.'}</li>
+                            <li>Next: {watchNextHint(item)}</li>
+                          </ul>
+                        )}
+                      </div>
                     )}
-                    <span className="flex-1" />
-                    <span className="text-[10px] font-mono text-[var(--t1-accent-orange)]">🔥 {impactScore(item)}</span>
-                    <div className="flex items-center gap-0.5 text-[10px] font-mono text-[var(--t1-text-muted)]">
-                      <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          if (!user) { setShowAuthGate(true); return; }
-                          const newSaved = new Set(savedIds);
-                          if (isSaved) {
-                            newSaved.delete(item.headline);
-                            setSavedIds(newSaved);
-                            await unsaveNewsItem(user.id, item.headline);
-                          } else {
-                            newSaved.add(item.headline);
-                            setSavedIds(newSaved);
-                            await saveNewsItem({ user_id: user.id, headline: item.headline.slice(0, 500), source: item.source, category: item.category, urgency: item.urgency, link: item.link ?? null, region: item.region ?? null, ticker: item.ticker ?? null });
-                          }
-                        }}
-                        className={cn('px-1 py-0.5 rounded hover:bg-[var(--t1-bg-tertiary)] transition-colors', isSaved ? 'text-[var(--t1-accent-green)]' : 'hover:text-[var(--t1-accent-green)]')}
-                      >
-                        [ {isSaved ? 'saved' : 'save'} ]
-                      </button>
-                      {hasLink && (
-                        <a href={item.link!} target="_blank" rel="noopener noreferrer" className="px-1 py-0.5 rounded hover:bg-[var(--t1-bg-tertiary)] hover:text-white transition-colors">
-                          [ share ]
-                        </a>
+
+                    {/* === BOTTOM ROW: source + actions === */}
+                    <div className="flex items-center gap-2 pt-2 border-t border-[var(--t1-border)]/30">
+                      <span className="text-[10px] font-mono" style={{ color: srcCfg.color }}>
+                        via <span className="font-bold">{item.source}</span>
+                      </span>
+                      {relatedCount > 1 && (
+                        <span className="text-[9px] font-mono text-[var(--t1-text-muted)]">· {relatedCount} sources</span>
                       )}
+                      <span className="flex-1" />
+                      <span className="text-[10px] font-mono text-[var(--t1-accent-orange)]">🔥 {impactScore(item)}</span>
+                      <div className="flex items-center gap-0.5 text-[10px] font-mono text-[var(--t1-text-muted)]">
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (!user) { setShowAuthGate(true); return; }
+                            const newSaved = new Set(savedIds);
+                            if (isSaved) {
+                              newSaved.delete(item.headline);
+                              setSavedIds(newSaved);
+                              await unsaveNewsItem(user.id, item.headline);
+                            } else {
+                              newSaved.add(item.headline);
+                              setSavedIds(newSaved);
+                              await saveNewsItem({ user_id: user.id, headline: item.headline.slice(0, 500), source: item.source, category: item.category, urgency: item.urgency, link: item.link ?? null, region: item.region ?? null, ticker: item.ticker ?? null });
+                            }
+                          }}
+                          className={cn('px-1 py-0.5 rounded hover:bg-[var(--t1-bg-tertiary)] transition-colors', isSaved ? 'text-[var(--t1-accent-green)]' : 'hover:text-[var(--t1-accent-green)]')}
+                        >
+                          [ {isSaved ? 'saved' : 'save'} ]
+                        </button>
+                        {hasLink && (
+                          <a href={item.link!} target="_blank" rel="noopener noreferrer" className="px-1 py-0.5 rounded hover:bg-[var(--t1-bg-tertiary)] hover:text-white transition-colors">
+                            [ share ]
+                          </a>
+                        )}
+                      </div>
                     </div>
                   </div>
+
+
                 </div>
               </div>
-            </div>
-          );
-
-        })}
+            );
+          })}
 
         {/* Empty states */}
         {displayedItems.length === 0 && items.length > 0 && (

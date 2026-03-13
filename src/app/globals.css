@@ -57,6 +57,44 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
+/* ===== Matrix Theme ===== */
+.theme-matrix {
+  --t1-bg-primary: #000000;
+  --t1-bg-secondary: #051405;
+  --t1-bg-tertiary: #0a1f0a;
+  --t1-bg-card: rgba(0, 15, 0, 0.95);
+  --t1-border: rgba(34, 197, 94, 0.3);
+  --t1-border-glow: rgba(34, 197, 94, 0.8);
+  --t1-text-primary: #4ade80;
+  --t1-text-secondary: #22c55e;
+  --t1-text-muted: #166534;
+  --t1-accent-cyan: #4ade80;
+  --t1-accent-amber: #4ade80;
+  --t1-accent-blue: #4ade80;
+  --t1-accent-orange: #4ade80;
+  --t1-accent-red: #86efac;
+}
+
+/* ===== Amber Theme ===== */
+.theme-amber {
+  --t1-bg-primary: #000000;
+  --t1-bg-secondary: #140b00;
+  --t1-bg-tertiary: #1f1100;
+  --t1-bg-card: rgba(15, 8, 0, 0.95);
+  --t1-border: rgba(245, 158, 11, 0.3);
+  --t1-border-glow: rgba(245, 158, 11, 0.8);
+  --t1-text-primary: #fbbf24;
+  --t1-text-secondary: #f59e0b;
+  --t1-text-muted: #92400e;
+  --t1-accent-green: #fbbf24;
+  --t1-accent-cyan: #fbbf24;
+  --t1-accent-amber: #fbbf24;
+  --t1-accent-blue: #fbbf24;
+  --t1-accent-orange: #fbbf24;
+  --t1-accent-red: #fde68a;
+  --t1-glow-green: 0 0 15px rgba(245, 158, 11, 0.2);
+}
+
 * {
   margin: 0;
   padding: 0;
