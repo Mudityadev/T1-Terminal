@@ -18,9 +18,11 @@ export default function LoginPage() {
   // Redirect if already logged in
   useEffect(() => {
     import('@/lib/supabase').then(({ supabase }) => {
-      supabase.auth.getSession().then(({ data }) => {
-        if (data.session) router.replace('/');
-      });
+      if (supabase) {
+        supabase.auth.getSession().then(({ data }) => {
+          if (data.session) router.replace('/');
+        });
+      }
     });
   }, [router]);
 
