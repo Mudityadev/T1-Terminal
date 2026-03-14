@@ -95,6 +95,28 @@ const URGENCY_ORDER: Record<IntelUrgency, number> = { FLASH: 0, URGENT: 1, BULLE
 const MAX_ITEMS = 200;
 const CACHE_KEY = 't1_live_intel_cache_v1';
 
+
+// ===== STABLE INLINE TICKER WIDGET =====
+// Declared outside NewsFeed so React can cleanly reconcile its lifecycle.
+// Rendering MiniTickerWidget as JSX stored in a variable inside a map() body
+// caused React's insertBefore DOM error during concurrent reconciliation.
+function InlineTickerByKey({ symbol }: { symbol: string }) {
+  const cl = commodityBuffer.find(c => c.symbol === 'CL');
+  const gc = commodityBuffer.find(c => c.symbol === 'GC');
+  const zt = commodityBuffer.find(c => c.symbol === 'ZT');
+  const spx = indexBuffer.find(i => i.symbol === 'SPX');
+
+  if (symbol === 'CL' && cl)
+    return <MiniTickerWidget symbol="CL" type="COMMODITY" initialValue={cl.price} initialChangePercent={cl.changePercent} />;
+  if (symbol === 'GC' && gc)
+    return <MiniTickerWidget symbol="GC" type="COMMODITY" initialValue={gc.price} initialChangePercent={gc.changePercent} />;
+  if (symbol === 'SPX' && spx)
+    return <MiniTickerWidget symbol="SPX" type="INDEX" initialValue={spx.value} initialChangePercent={spx.changePercent} />;
+  if (symbol === 'ZT' && zt)
+    return <MiniTickerWidget symbol="ZT" type="COMMODITY" initialValue={zt.price} initialChangePercent={zt.changePercent} />;
+  return null;
+}
+
 export default function NewsFeed() {
   const [items, setItems] = useState<IntelItem[]>([]);
   const [activeFilter, setActiveFilter] = useState<FilterCategory>('ALL');
@@ -753,21 +775,21 @@ export default function NewsFeed() {
           const relatedCount = relatedKeyCounts.get(relatedKey) ?? 0;
 
           // Contextual matching logic for inline widgets
-          let inlineWidget = null;
+          let inlineWidgetKey: string | null = null;
           const headlineLower = item.headline.toLowerCase();
           
           if (item.category === 'ENERGY' || headlineLower.includes('oil') || headlineLower.includes('crude')) {
             const cl = commodityBuffer.find(c => c.symbol === 'CL');
-            if (cl) inlineWidget = <MiniTickerWidget symbol="CL" type="COMMODITY" initialValue={cl.price} initialChangePercent={cl.changePercent} />;
+            if (cl) inlineWidgetKey = 'CL';
           } else if (headlineLower.includes('gold') || headlineLower.includes('precious')) {
             const gc = commodityBuffer.find(c => c.symbol === 'GC');
-            if (gc) inlineWidget = <MiniTickerWidget symbol="GC" type="COMMODITY" initialValue={gc.price} initialChangePercent={gc.changePercent} />;
+            if (gc) inlineWidgetKey = 'GC';
           } else if (item.category === 'MARKETS' || headlineLower.includes('s&p') || headlineLower.includes('stocks')) {
             const spx = indexBuffer.find(i => i.symbol === 'SPX');
-            if (spx) inlineWidget = <MiniTickerWidget symbol="SPX" type="INDEX" initialValue={spx.value} initialChangePercent={spx.changePercent} />;
+            if (spx) inlineWidgetKey = 'SPX';
           } else if (headlineLower.includes('fed') || headlineLower.includes('rates') || headlineLower.includes('bond')) {
-            const zt = commodityBuffer.find(c => c.symbol === 'ZT'); // Using 2Y Treasury as proxy
-            if (zt) inlineWidget = <MiniTickerWidget symbol="ZT" type="COMMODITY" initialValue={zt.price} initialChangePercent={zt.changePercent} />;
+            const zt = commodityBuffer.find(c => c.symbol === 'ZT');
+            if (zt) inlineWidgetKey = 'ZT';
           }
 
           return (
@@ -879,9 +901,9 @@ export default function NewsFeed() {
                       </div>
                       
                       {/* Right-aligned inline ticker widget */}
-                      {inlineWidget && (
+                      {inlineWidgetKey && (
                         <div className="hidden sm:block shrink-0 pt-0.5 animate-fade-in">
-                          {inlineWidget}
+                          <InlineTickerByKey symbol={inlineWidgetKey} />
                         </div>
                       )}
                     </div>

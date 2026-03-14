@@ -19,6 +19,10 @@ export async function POST() {
       });
     }
 
+    if (!supabase) {
+      return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 });
+    }
+
     const { error } = await supabase.rpc('increment_analytics', {
       is_unique: isUnique,
     });

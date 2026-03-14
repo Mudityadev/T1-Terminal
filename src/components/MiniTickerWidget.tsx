@@ -69,7 +69,9 @@ export const MiniTickerWidget = memo(function MiniTickerWidget({
       <div className="w-12 h-6 border-l border-[var(--t1-border)]/30 pl-1.5 ml-0.5 pointer-events-none">
         <SparklineChart 
           data={history} 
-          color={isPositive ? 'var(--t1-accent-green)' : 'var(--t1-accent-red)'} 
+          color={isPositive ? 'var(--t1-accent-green)' : 'var(--t1-accent-red)'}
+          width={48}
+          height={24}
         />
       </div>
     </div>
