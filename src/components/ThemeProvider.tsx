@@ -25,7 +25,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setMounted(true);
-    
     // Check local storage on mount (client-side only)
     if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
       const savedTheme = localStorage.getItem('t1_theme') as Theme;
@@ -44,11 +43,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     applyThemeToBody(newTheme);
   };
 
-  // Prevent hydration mismatch
-  if (!mounted) {
-    return <>{children}</>;
-  }
-
+  // Always provide the context, but only apply theme logic after mount
   return (
     <ThemeContext.Provider value={{ theme, setTheme }}>
       {children}
