@@ -12,6 +12,7 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 const applyThemeToBody = (activeTheme: Theme) => {
+  if (typeof document === 'undefined') return;
   document.documentElement.classList.remove('theme-matrix', 'theme-amber');
   if (activeTheme !== 'default') {
     document.documentElement.classList.add(`theme-${activeTheme}`);
@@ -20,21 +21,33 @@ const applyThemeToBody = (activeTheme: Theme) => {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>('default');
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    // Check local storage on mount
-    const savedTheme = localStorage.getItem('t1_theme') as Theme;
-    if (savedTheme && ['default', 'matrix', 'amber'].includes(savedTheme)) {
-      setThemeState(savedTheme);
-      applyThemeToBody(savedTheme);
+    setMounted(true);
+    
+    // Check local storage on mount (client-side only)
+    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+      const savedTheme = localStorage.getItem('t1_theme') as Theme;
+      if (savedTheme && ['default', 'matrix', 'amber'].includes(savedTheme)) {
+        setThemeState(savedTheme);
+        applyThemeToBody(savedTheme);
+      }
     }
   }, []);
 
   const setTheme = (newTheme: Theme) => {
     setThemeState(newTheme);
-    localStorage.setItem('t1_theme', newTheme);
+    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+      localStorage.setItem('t1_theme', newTheme);
+    }
     applyThemeToBody(newTheme);
   };
+
+  // Prevent hydration mismatch
+  if (!mounted) {
+    return <>{children}</>;
+  }
 
   return (
     <ThemeContext.Provider value={{ theme, setTheme }}>
