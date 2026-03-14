@@ -22,6 +22,7 @@ export interface SavedNewsRow {
 
 export async function saveNewsItem(item: Omit<SavedNewsRow, 'id' | 'saved_at'>): Promise<{ ok: boolean; error?: string }> {
   try {
+    if (!supabase) return { ok: false, error: 'Supabase not configured' };
     const { error } = await supabase.from('t1_saved_news').insert(item);
     if (error) return { ok: false, error: error.message };
     return { ok: true };
@@ -32,6 +33,7 @@ export async function saveNewsItem(item: Omit<SavedNewsRow, 'id' | 'saved_at'>):
 
 export async function unsaveNewsItem(userId: string, headline: string): Promise<void> {
   try {
+    if (!supabase) return;
     await supabase.from('t1_saved_news')
       .delete()
       .eq('user_id', userId)
@@ -41,6 +43,7 @@ export async function unsaveNewsItem(userId: string, headline: string): Promise<
 
 export async function fetchSavedNews(userId: string): Promise<SavedNewsRow[]> {
   try {
+    if (!supabase) return [];
     const { data, error } = await supabase
       .from('t1_saved_news')
       .select('*')
@@ -55,6 +58,7 @@ export async function fetchSavedNews(userId: string): Promise<SavedNewsRow[]> {
 
 export async function fetchSavedHeadlines(userId: string): Promise<Set<string>> {
   try {
+    if (!supabase) return new Set();
     const { data, error } = await supabase
       .from('t1_saved_news')
       .select('headline')
